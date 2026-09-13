@@ -2,7 +2,7 @@
 
 This is a full function-to-component port of Olivia Jack's [`hydra`](https://github.com/hydra-synth) visual synth engine to TouchDesigner.
 
-`hydra` project is built using GLSL functions, in this case its WebGL.
+[`hydra` project API](https://hydra.ojack.xyz/api/) is built using [GLSL functions](https://github.com/hydra-synth/hydra-functions/blob/main/libs/hydra/glsl-functions.js), in this case its WebGL.
 
 TouchDesigner has GLSL TOP which uses native OpenGL.
 
