@@ -24,6 +24,8 @@ This project is built 96% with the help of Claude Code in two relaxed days. [Hea
 
 ![Audio Group with previews](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/group-audio-00.png?raw=true)
 
+![In Action](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/in-action-02.png?raw=true)
+
 ## Function-to-Component Logic
 
 Each Hydra function is converted to a corresponding TD Component holding its shader source inside, together with wiring of parameters to shader inputs. Output is mapped to be the output of the component (TOP).
@@ -36,7 +38,9 @@ Also includes `hydra_fft` CHOP which replicates `a.fft[n]` functionality of Hydr
 
 ## Building
 
-For details on building, see `assets/scripts/hydra/Build.md`. `Hydra.toe` project includes all the function-components and the generator component `build_hydra` inside the `hydra` Base Component. Which is itself stored in `components/hydra`.
+For details on building, see `assets/scripts/hydra/Build.md`.
+
+`Hydra.toe` project includes all the function-components and the generator component `build_hydra` inside the `hydra` Base Component. Which is itself stored in `components/hydra`.
 
 Components are rewritten all the time when `build_hydra.py` is changed and those lines performed in Textport:
 
@@ -51,4 +55,12 @@ BE AWARE: In this case it automatically generates and puts components to your Pa
 
 ## Structure
 
-![Structure](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/structure-00.png?raw=true)
+* `Hydra.toe` — the project containing `hydra` base component (`hydra.tox`) already set up to make cloning them or building new versions easier;
+* `components/hydra/hydra.tox` — the `hydra` base component containing all the functions-components as well as the generator (`build_hydra`);
+* `components/hydra/<group>/hydra_<fn>.tox` — the components files themselves.
+* `assets/scripts/hydra/*` — the code for generating components, the main script is `build_hydra.py`;
+* `assets/ceripts/hydra-functions.json` — the source of `hydra` functions and their arguments used when building; Converted from `hydra` sources and can easily be updated;
+* `assets/scripts/hydra/shader/<fn>.frag` — fragment shader source for every `hydra` function, used inside the components;
+* `assets/scripts/hydra/hydra_seq.py` — a helper to work with `hydra`-like sequences in TD: e.g. `[1, 2, 3, 4].fast()`. But since all of them can easily be recreated using basic TD functionality, it is left for academic purposes mostly;
+
+![Structure](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/structure-02.png?raw=true)
