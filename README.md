@@ -36,6 +36,8 @@ For source arguments any TOP component may be passed in the input.
 
 Also includes `hydra_fft` CHOP which replicates `a.fft[n]` functionality of Hydra, but creates a channel output for every bin.
 
+![In Action](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/audio-in-action-00.png?raw=true)
+
 ## Building
 
 For details on building, see `assets/scripts/hydra/Build.md`.
