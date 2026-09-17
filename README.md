@@ -26,6 +26,20 @@ This project is built 96% with the help of Claude Code in two relaxed days. [Hea
 
 ![In Action](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/in-action-02.png?raw=true)
 
+### Examples
+
+![All Examples](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/all-examples-00.png?raw=true)
+
+![`khoparzi_1`](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/example-khoparzi1-01.png?raw=true) [at Hydra](https://hydra.ojack.xyz/?sketch_id=khoparzi_1)
+
+![`ritchse_4`](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/example-ritchse_4-00.png?raw=true) [at Hydra](https://hydra.ojack.xyz/?sketch_id=ritchse_4)
+
+![`rranga_3`](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/example-rranga_3-00.png?raw=true) [at Hydra](https://hydra.ojack.xyz/?sketch_id=rranga_3)
+
+![`example_11`](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/example-example11-00.png?raw=true) [at Hydra](https://hydra.ojack.xyz/?sketch_id=example_11)
+
+![`example_18`](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/example-example_18-00.png?raw=true) [at Hydra](https://hydra.ojack.xyz/?sketch_id=example_18)
+
 ## Function-to-Component Logic
 
 Each Hydra function is converted to a corresponding TD Component holding its shader source inside, together with wiring of parameters to shader inputs. Output is mapped to be the output of the component (TOP).
