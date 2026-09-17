@@ -75,3 +75,12 @@ BE AWARE: In this case it automatically generates and puts components to your Pa
   * pass `, dest=op('/project1/sketch')` to spawn them to some other destination;
   * pass `, postfix='xx'` to spawn them with postfix after the name;
 * `b.set_resolution(op('/project1/hydra'), 1920, 1080)` sets given resolution to all Hydra source components at given path (source components such as `osc` or `shape`, all have `Output` tab individually to allow setting it on your own)
+
+`hydra_seq` script can be used to emulate Hydra array arguments which allow to step over a set of values with constant speed or with easing. Same and even much more powerful can be achieved using CHOPs of course, so you have a freedom to choose any way you prefer.
+
+Associate Text DAT with `hydra_seq.py` and then put in any expression:
+
+* `mod('/project1/hydra/hydra_seq').val([0.1, -0.0625, 0.005, 0.00001])` — same as `[0.1, -0.0625, 0.005, 0.00001]` argument in hydra;
+* `mod('/project1/hydra/hydra_seq').val([0.1, -0.0625, 0.005, 0.00001], speed=2)` — same as `[0.1, -0.0625, 0.005, 0.00001].fast(2)` argument in hydra;
+* `mod('/project1/hydra/hydra_seq').val([0.1, -0.0625, 0.005, 0.00001], smooth=1)` — same as `[0.1, -0.0625, 0.005, 0.00001].smooth()` argument in hydra;
+* `mod('/project1/hydra/hydra_seq').val([0.1, -0.0625, 0.005, 0.00001], ease='easeInOutCubic')` — same as `[0.1, -0.0625, 0.005, 0.00001].ease('easeInOutCubic')` argument in hydra;
