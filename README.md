@@ -30,15 +30,15 @@ This project is built 96% with the help of Claude Code in two relaxed days. [Hea
 
 ![All Examples](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/all-examples-00.png?raw=true)
 
-![`khoparzi_1`](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/example-khoparzi1-01.png?raw=true) [at Hydra](https://hydra.ojack.xyz/?sketch_id=khoparzi_1)
+![`khoparzi_1`](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/example-khoparzi1-01.png?raw=true) [`khoparzi_1` at Hydra](https://hydra.ojack.xyz/?sketch_id=khoparzi_1)
 
-![`ritchse_4`](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/example-ritchse_4-00.png?raw=true) [at Hydra](https://hydra.ojack.xyz/?sketch_id=ritchse_4)
+![`ritchse_4`](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/example-ritchse_4-00.png?raw=true) [`ritchse_4` at Hydra](https://hydra.ojack.xyz/?sketch_id=ritchse_4)
 
-![`rranga_3`](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/example-rranga_3-00.png?raw=true) [at Hydra](https://hydra.ojack.xyz/?sketch_id=rranga_3)
+![`rangga_3`](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/example-rangga_3-00.png?raw=true) [`rangga_3` at Hydra](https://hydra.ojack.xyz/?sketch_id=rangga_3)
 
-![`example_11`](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/example-example11-00.png?raw=true) [at Hydra](https://hydra.ojack.xyz/?sketch_id=example_11)
+![`example_11`](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/example-example11-00.png?raw=true) [`example_11` at Hydra](https://hydra.ojack.xyz/?sketch_id=example_11)
 
-![`example_18`](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/example-example_18-00.png?raw=true) [at Hydra](https://hydra.ojack.xyz/?sketch_id=example_18)
+![`example_18`](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/example-example_18-00.png?raw=true) [`example_18` at Hydra](https://hydra.ojack.xyz/?sketch_id=example_18)
 
 ## Function-to-Component Logic
 
