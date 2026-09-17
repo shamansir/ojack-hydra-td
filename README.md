@@ -61,8 +61,17 @@ BE AWARE: In this case it automatically generates and puts components to your Pa
 * `components/hydra/hydra.tox` — the `hydra` base component containing all the functions-components as well as the generator (`build_hydra`);
 * `components/hydra/<group>/hydra_<fn>.tox` — the components files themselves.
 * `assets/scripts/hydra/*` — the code for generating components, the main script is `build_hydra.py`;
-* `assets/ceripts/hydra-functions.json` — the source of `hydra` functions and their arguments used when building; Converted from `hydra` sources and can easily be updated;
+* `assets/scripts/hydra-functions.json` — the source of `hydra` functions and their arguments used when building; Converted from `hydra` sources and can easily be updated;
 * `assets/scripts/hydra/shader/<fn>.frag` — fragment shader source for every `hydra` function, used inside the components;
 * `assets/scripts/hydra/hydra_seq.py` — a helper to work with `hydra`-like sequences in TD: e.g. `[1, 2, 3, 4].fast()`. But since all of them can easily be recreated using basic TD functionality, it is left for academic purposes mostly;
 
 ![Structure](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/structure-02.png?raw=true)
+
+## Features
+
+`build_hydra` script has many helpers, for example:
+
+* `b.spawn(['osc', 'osc', 'rotate', 'scale'])` would spawn clones of those components from Library into your project root;
+  * pass `, dest=op('/project1/sketch')` to spawn them to some other destination;
+  * pass `, postfix='xx'` to spawn them with postfix after the name;
+* `b.set_resolution(op('/project1/hydra'), 1920, 1080)` sets given resolution to all Hydra source components at given path (source components such as `osc` or `shape`, all have `Output` tab individually to allow setting it on your own)

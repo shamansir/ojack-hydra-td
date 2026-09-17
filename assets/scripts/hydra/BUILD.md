@@ -50,6 +50,7 @@ b.export_tox(op('/project1/hydra'))      # write the .tox tree
 b.export_palette(op('/project1/hydra'))  # write into the TD user palette
 b.layout_groups(op('/project1/hydra'), b.load_specs())   # re-arrange only
 b.build(spec, op('/project1/hydra'))  # a single component, from one spec dict
+b.spawn(['osc', 'osc', 'rotate', 'scale'])               # copies to patch with
 ```
 
 `build_all` and `rebuild` take `layout=False`, `audio=False`, `tox=False`,
@@ -145,6 +146,39 @@ for hydra's array arguments. CHOPs are usually the better tool.
 **Connector order** is image inputs first, then arguments in hydra's declared
 order, set through each In OP's *Connect Order*.
 
+## Spawning copies
+
+The generated components are a library — patch with copies of them, not with the
+originals:
+
+```python
+b.spawn(['osc', 'osc', 'rotate', 'scale'])
+b.spawn(['osc', 'rotate'], postfix='_a')       # hydra_osc_a, hydra_rotate_a
+b.spawn(['noise'], dest=op('/project1/sketch2'))
+b.spawn(['osc'], lib=op('/some/other/hydra'))  # a different library
+```
+
+Repeats in the list are fine — each copy gets a numeric suffix, so
+`['osc', 'osc']` yields `hydra_osc` and `hydra_osc1`. `postfix` lands before that
+suffix.
+
+`spawn` returns the created components, so you can wire them up directly:
+
+```python
+a, b_, r = b.spawn(['osc', 'noise', 'modulate'])
+r.inputConnectors[0].connect(a)
+r.inputConnectors[1].connect(b_)
+```
+
+**Where copies land.** `dest` defaults to the *parent* of the library, not the
+library itself — copies inherit the `hydra` tag, so a `clear()` or `rebuild()` on
+the library container would destroy them along with the originals. Keep them
+apart.
+
+**Which library.** `build_all` remembers its target, so `spawn` usually needs no
+`lib`. After a TD restart that memory is gone and it searches the project for
+tagged components instead; pass `lib=` if it guesses wrong.
+
 ## Resolution
 
 Source functions (`osc`, `noise`, `shape`, `voronoi`, `gradient`, `solid`) have
@@ -155,10 +189,12 @@ class follows its input, so setting the sources sets the chain.
 Retune a whole container at once:
 
 ```python
-b.set_resolution(op('/project1/hydra'), 1920, 1080)
+b.set_resolution(op('/project1/hydra'), 1280, 1280)
 ```
 
-Change `DEFAULT_RES` in `build_hydra.py` to make it the default for new builds.
+**A non-commercial licence caps output at 1280×1280**, so that is the practical
+ceiling here; `set_resolution` warns when you ask for more. Change `DEFAULT_RES`
+in `build_hydra.py` to move the default for new builds.
 
 Anything else feeding a chain — a Constant TOP seeding a Feedback TOP, for
 instance — has to be set to match by hand, or it resamples.
