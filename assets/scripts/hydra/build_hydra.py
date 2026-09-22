@@ -318,12 +318,14 @@ def build(spec, dest):
         set_order(t, i)                    # image inputs come first
         in_tops.append(t)
 
-    # a source in coordinate mode reads its `st` from a coordinate map, which
-    # arrives on an extra input after the image ones (shader's COORD_IN)
+    # A source in coordinate mode reads its `st` from a coordinate map. The
+    # shader takes it at COORD_IN (straight after the image inputs), but on the
+    # component it is ordered LAST, after every argument connector -- otherwise
+    # it lands in the middle of the hydra arguments.
     if kind == 'src' and uses_coordmode(text):
         t = comp.create(inTOP, 'coords')
         t.nodeX, t.nodeY = -600, -160 * len(in_tops)
-        set_order(t, len(in_tops))
+        set_order(t, len(image_inputs) + len(floats))
         in_tops.append(t)
 
     # one CHOP input per numeric argument, each defaulting to its parameter
@@ -342,7 +344,7 @@ def build(spec, dest):
 
         chop = comp.create(inCHOP, hn)
         chop.nodeX, chop.nodeY = -600, y
-        set_order(chop, len(in_tops) + i)   # then the arguments, in hydra's order
+        set_order(chop, len(image_inputs) + i)   # arguments, in hydra's order
         # The In CHOP's own input is the fallback, used when the component's
         # external connector is empty. Builds differ on how many connectors it
         # exposes, so take the last one rather than assuming an index.
@@ -618,12 +620,27 @@ def upgrade(dest, specs=None, depth=8):
         kind = spec['type']
         image_inputs = inputs_for(spec)
 
-        # a source in coordinate mode needs the extra `coords` input
-        if kind == 'src' and uses_coordmode(text) and not comp.op('coords'):
-            t = comp.create(inTOP, 'coords')
-            t.nodeX, t.nodeY = -600, -160 * len(image_inputs)
-            set_order(t, len(image_inputs))
-            glsl.inputConnectors[len(image_inputs)].connect(t)
+        floats = [i for i in spec['inputs'] if i['type'] == 'float']
+
+        # Re-apply Connect Order to the image inputs. Components built before
+        # Connect Order existed left them all at the default, so `source` could
+        # tie with the arguments and land anywhere among them.
+        for i, label in enumerate(image_inputs):
+            t = comp.op(label)
+            if t:
+                set_order(t, i)
+            else:
+                print(f'  !! {comp.path}: no In TOP named {label!r}')
+
+        # a source in coordinate mode needs the extra `coords` input, ordered
+        # after every argument connector (see build)
+        if kind == 'src' and uses_coordmode(text):
+            t = comp.op('coords')
+            if not t:
+                t = comp.create(inTOP, 'coords')
+                t.nodeX, t.nodeY = -600, -160 * len(image_inputs)
+                glsl.inputConnectors[len(image_inputs)].connect(t)
+            set_order(t, len(image_inputs) + len(floats))
 
         # and the toggle that drives the uvmode uniform
         if uses_coordmode(text) and 'Coordmode' not in {p.name for p in comp.pars()}:
@@ -635,7 +652,6 @@ def upgrade(dest, specs=None, depth=8):
         # Argument plumbing, for copies predating the per-argument CHOP inputs:
         # the uniform expression is op('<arg>')[0].eval(), so a missing In CHOP
         # evaluates to None and the uniform never gets assigned.
-        floats = [i for i in spec['inputs'] if i['type'] == 'float']
         names = {p.name for p in comp.pars()}
         hydra_page = next((pg for pg in comp.customPages if pg.name == 'Hydra'), None)
         for k, inp in enumerate(floats):
@@ -664,7 +680,7 @@ def upgrade(dest, specs=None, depth=8):
             if not chop:
                 chop = comp.create(inCHOP, hn)
                 chop.nodeX, chop.nodeY = -600, y
-                set_order(chop, len(image_inputs) + k)
+            set_order(chop, len(image_inputs) + k)   # re-apply: fixes old ties
             # wire the fallback whether the In CHOP is new or was already there:
             # an existing one with an empty internal input is exactly the case
             # that leaves the parameter with no path to the shader
