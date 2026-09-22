@@ -151,8 +151,12 @@ hydra_osc/
   time_exec           Parameter Execute DAT, time-using functions only
   out                 Out TOP     also the component's Operator Viewer
   + custom page 'Hydra'       one parameter per argument
-  + custom page 'Output'      resolution (sources), input smoothness, pixel format
+  + custom page 'Pipeline'    image vs coordinates, where the shader supports it
   + custom page 'Time Sync'   time-using functions only
+  + custom page 'Output'      resolution (sources), input smoothness, pixel format
+
+Pages always appear in that order (`PAGE_ORDER`), whichever of them a given
+function happens to have.
 ```
 
 **Arguments resolve in one of two ways.** Connect a CHOP to an argument's
@@ -304,8 +308,8 @@ hydra_coords ──→ hydra_rotate ──→ hydra_osc ──→ …
 ```
 
 - **`hydra_coords`** is the identity map that seeds the chain, in the Source group.
-- **`coordinate mode`** (Output page) switches a component between image and
-  coordinate handling. Off by default: existing patches are untouched.
+- **`mode`** on the **Pipeline** page switches a component between `Image` and
+  `Coordinates`. `Image` by default: existing patches are untouched.
 - Sources gain a **`coords`** input, after their image inputs.
 - **Use 32-bit float** on every TOP in the coordinate path. Coordinates leave
   0..1 immediately and anything fixed-point clips them.
