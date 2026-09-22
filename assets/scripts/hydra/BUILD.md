@@ -320,8 +320,24 @@ runs first. `osc().rotate().scale()` becomes
 `coords → scale → rotate → osc`. Faithful to evaluation order, backwards from how
 it reads.
 
-Not covered: `combineCoord` (the `modulate*` family) stays image-only for now —
-its modulator is an image sampled mid-chain, which needs its own design pass.
+`combineCoord` (the `modulate*` family) works too. Input 0 carries the coordinate
+map, input 1 stays the modulator image, and the modulator is sampled at the
+**incoming coordinates** — hydra captures `vec2 uv_c_i0 = uv` after the coord ops
+that come later in the chain, which is exactly what arrives on input 0.
+
+One approximation there: hydra's modulator is another analytic sub-chain, while
+yours is a rasterized texture, so sampling it outside `[0,1]` has to wrap
+(`fract`). It matches wherever the modulator chain ends in something bounded or
+already periodic.
+
+Which functions actually need this mode — the ones whose coordinates escape
+`[0,1]` (everything else ends in `fract()` and is faithful in image mode):
+
+| needs Coordinates | safe in Image |
+|---|---|
+| `rotate`, `scale` (amount < 1), `kaleid` | `pixelate`, `repeat`, `repeatX/Y` |
+| `modulate`, `modulateScale`, `modulateRotate` | `scroll`, `scrollX/Y` |
+| `modulateKaleid`, `modulateHue` | `modulatePixelate`, `modulateRepeat*`, `modulateScrollX/Y` |
 
 ## Extensions
 
