@@ -178,10 +178,15 @@ originals:
 
 ```python
 b.spawn(['osc', 'osc', 'rotate', 'scale'])
+b.spawn(['osc*3', 'rotate'])                   # counts
+b.spawn('osc*3 rotate scale')                  # or one string
 b.spawn(['osc', 'rotate'], postfix='_a')       # hydra_osc_a, hydra_rotate_a
 b.spawn(['noise'], dest=op('/project1/sketch2'))
 b.spawn(['osc'], lib=op('/some/other/hydra'))  # a different library
 ```
+
+`osc*3`, `3*osc` and `osc * 3` are equivalent, and a whitespace-separated string
+works in place of a list.
 
 Repeats in the list are fine — each copy gets a numeric suffix, so
 `['osc', 'osc']` yields `hydra_osc` and `hydra_osc1`. `postfix` lands before that

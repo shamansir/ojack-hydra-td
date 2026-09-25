@@ -537,8 +537,46 @@ def unique_name(dest, base):
     return f'{base}{i}'
 
 
+def expand_names(names):
+    """['osc*3', 'rotate'] -> ['osc', 'osc', 'osc', 'rotate'].
+
+    Accepts a list or one whitespace-separated string, so both of these work:
+
+        spawn(['osc*3', 'rotate'])
+        spawn('osc*3 rotate scale')
+
+    The count may sit on either side of the `*`, with or without spaces around
+    it -- `osc*3`, `3*osc` and `osc * 3` are the same.
+    """
+    if isinstance(names, str):
+        names = [names]
+    flat = ' '.join(str(n) for n in names).replace('*', ' * ').split()
+
+    out, i = [], 0
+    while i < len(flat):
+        token = flat[i]
+        if token == '*':                       # '<a> * <b>' -- one of them is a count
+            i += 1
+            continue
+        if i + 2 < len(flat) and flat[i + 1] == '*':
+            a, b = token, flat[i + 2]
+            if b.isdigit():
+                out += [a] * int(b)
+            elif a.isdigit():
+                out += [b] * int(a)
+            else:
+                print(f'  !! cannot read a count in {a!r} * {b!r}')
+            i += 3
+            continue
+        out.append(token)
+        i += 1
+    return out
+
+
 def spawn(names, dest=None, lib=None, postfix='', spacing=200, x=0, y=0):
     """Copy generated components by name, e.g. spawn(['osc', 'osc', 'rotate']).
+
+    Counts are supported: spawn(['osc*3', 'rotate']) or spawn('osc*3 rotate').
 
     Repeats are fine -- each copy gets a numeric suffix so names stay unique.
     `postfix` goes before that suffix: postfix='_a' gives hydra_osc_a.
@@ -553,7 +591,7 @@ def spawn(names, dest=None, lib=None, postfix='', spacing=200, x=0, y=0):
     dest = dest or lib.parent()
 
     made, missing = [], []
-    for i, name in enumerate(names):
+    for i, name in enumerate(expand_names(names)):
         original = lib.op(f'hydra_{name.lower()}')
         if not original:
             missing.append(name)
