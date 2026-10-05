@@ -14,6 +14,7 @@ Research and design rationale: `claude/HYDRA_RESEARCH.md`.
 | `generate-hydra-functions.sh` | regenerates that JSON from hydra's source |
 | `emit_frags.py` | writes `shader/*.frag` from the JSON |
 | `build_hydra.py` | builds the TD components from the JSON + shaders |
+| `hydra_compile.py` | Compiled mode: fuses a chain into one shader — embedded into each component |
 | `fft_chop.py` | Script CHOP callbacks: hydra's `a.fft[n]` |
 | `time_exec.py` | Parameter Execute callbacks, embedded into time-using components |
 | `hydra_seq.py` | hydra's array arguments (`[1,2,3].fast().ease()`) — optional |
@@ -53,6 +54,8 @@ b.export_palette(op('/project1/hydra'))  # write into the TD user palette
 b.layout_groups(op('/project1/hydra'), b.load_specs())   # re-arrange only
 b.build(spec, op('/project1/hydra'))  # a single component, from one spec dict
 b.spawn(['osc', 'osc', 'rotate', 'scale'])               # copies to patch with
+b.set_mode(op('/project1'), 'compiled')  # Mode on every placed component
+b.cook_report(op('/project1'))           # GPU/CPU cook time per component
 ```
 
 `build_all` and `rebuild` take `layout=False`, `audio=False`, `tox=False`,
@@ -151,7 +154,12 @@ hydra_osc/
   time_exec           Parameter Execute DAT, time-using functions only
   out                 Out TOP     also the component's Operator Viewer
   + custom page 'Hydra'       one parameter per argument
-  + custom page 'Pipeline'    image vs coordinates, seamless tiling (osc, noise, voronoi)
+  compile             Text DAT    hydra_compile.py, embedded
+  chain_exec          OP Execute DAT, recompiles on rewire / rename / Viewer flag
+  mode_exec           Parameter Execute DAT, recompiles on Mode / Compile
+  pixel_compiled      Text DAT    the fused shader, Compiled mode only
+  + custom page 'Pipeline'    mode (image / coordinates / compiled), Compile,
+                              seamless tiling (osc, noise, voronoi)
   + custom page 'Time Sync'   time-using functions only
   + custom page 'Output'      resolution (sources), input smoothness, pixel format
 
@@ -344,6 +352,78 @@ Which functions actually need this mode — the ones whose coordinates escape
 | `modulate`, `modulateScale`, `modulateRotate` | `scroll`, `scrollX/Y` |
 | `modulateKaleid`, `modulateHue` | `modulatePixelate`, `modulateRepeat*`, `modulateScrollX/Y` |
 
+## Compiled mode
+
+Hydra's own model, with hydra's wiring order. Set **Mode** to **Compiled** and the
+component stops sampling its inputs: it walks the wiring upstream and fuses every
+hydra component it finds into one shader, the way hydra's `generate-glsl.js` does.
+
+```
+osc ──→ rotate ──→ scale        all Compiled; scale's shader is
+                                osc_2(rotate_1(scale_0(st, …), …), …)
+```
+
+The source is evaluated at the final coordinate, so nothing wraps, nothing seams,
+nothing is resampled, and `fract` happens once, inside `src`/`prev`, as in hydra.
+Wiring stays in hydra's order and any pixel format works.
+
+```python
+b.set_mode(op('/project1/sketch'), 'compiled')
+```
+
+**What gets inlined.** Every hydra component upstream, whatever its own Mode,
+except:
+
+- components in **Coordinates** mode, and `hydra_coords`
+- whatever feeds `src` or `prev` — in hydra that is a buffer, not a chain
+- anything that is not a hydra component (a Movie File In, a Blur, …)
+
+Those are **boundaries**: read as a texture, `texture(s, fract(uv))` — exactly
+what hydra's `src()` does. The GLSL TOP has no Samplers page, so each boundary is
+a Select TOP inside the component (`boundary0`, `boundary1`, …) wired into the
+GLSL TOP's inputs.
+
+**What gets compiled.** Only components something looks at:
+
+- **Viewer on** — its node viewer shows the chain up to there, exactly.
+- **An output** — its texture is read by something outside a compiled chain: a
+  non-hydra operator, an Image-mode hydra component, a `src` input, or nothing at
+  all (end of a chain).
+
+Everything else keeps its last shader and, since its GLSL TOP is unwired from its
+inputs and nothing pulls on it, never cooks. Turning a Viewer on compiles that
+stage; turning it off stops it cooking. A viewed intermediate costs a full pass of
+the chain above it, every frame.
+
+**When it recompiles.** On rewiring (the component and everything downstream),
+renaming, a Viewer flag, a Mode change, or the **Compile** pulse. Triggers within
+one frame are collapsed. Parameter and CHOP changes need no recompile — every
+argument is a uniform expression pointing at its own component's In CHOP or
+parameter, exactly as in Image mode.
+
+**Time.** Each inlined function keeps its own component's Time
+(`#define time u<k>_time` around its body). With every Time equal — the default, or
+after Propagate Time Expr — this is hydra's one global `time`.
+
+**Resolution.** The root source's `resolution` (followed along `source` inputs),
+or the boundary texture's size.
+
+**Comparing speed.** `b.cook_report(op('/project1/sketch'))` prints last-frame GPU
+and CPU cook time per component. Run it in each mode; components that did not cook
+report 0.
+
+**Caveats.**
+
+- Shared upstream is evaluated once per use, as in hydra: `osc` feeding both
+  inputs of `add` runs twice per pixel.
+- Compiled shaders refer to upstream components by path. Renames recompile, but a
+  component moved into another container is a different path — pulse Compile.
+- The shader lives in `pixel_compiled`; the file-synced `pixel` DAT is untouched
+  and comes back when you leave Compiled mode.
+- The trigger callbacks rely on OP Execute toggles (`wirechange`, `flagchange`,
+  `namechange`, `pathchange`); a `!!` line in the Textport at build time means a
+  name differs in your TD build.
+
 ## Seamless tiling
 
 A cheaper, **approximate** alternative to coordinate mode. It is not hydra: the
@@ -368,6 +448,14 @@ Narrow it for more exactness and a harder transition; widen it for a softer one.
 `noise` blends uncorrelated copies, which averages contrast down toward 0, so its
 spread is rescaled to compensate. `voronoi` is not compensated: its mean depends
 on its arguments.
+
+**It only fixes the source, i.e. the first coord op after it.** Each coord op
+writes a new 0..1 texture, and that output does not tile in general: after
+`rotate(6)` the rotated pattern no longer lines up with the square's edges. A
+second coord op that leaves 0..1 — `osc().rotate(6).scale(0.5)` — wraps that
+output and shows a seam again. Only ops that keep a tiling texture tiling are
+safe to chain: rotations by multiples of 90°, `repeat` by whole numbers, scrolls.
+For anything else, use Coordinates mode.
 
 What no tiling can fix: the pattern now **repeats** every tile. After `scale(0.3)`
 you see a grid of copies where hydra shows one unbroken field. Only Coordinates
