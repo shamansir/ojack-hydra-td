@@ -151,7 +151,7 @@ hydra_osc/
   time_exec           Parameter Execute DAT, time-using functions only
   out                 Out TOP     also the component's Operator Viewer
   + custom page 'Hydra'       one parameter per argument
-  + custom page 'Pipeline'    image vs coordinates, where the shader supports it
+  + custom page 'Pipeline'    image vs coordinates, seamless tiling (osc, noise, voronoi)
   + custom page 'Time Sync'   time-using functions only
   + custom page 'Output'      resolution (sources), input smoothness, pixel format
 
@@ -343,6 +343,39 @@ Which functions actually need this mode — the ones whose coordinates escape
 | `rotate`, `scale` (amount < 1), `kaleid` | `pixelate`, `repeat`, `repeatX/Y` |
 | `modulate`, `modulateScale`, `modulateRotate` | `scroll`, `scrollX/Y` |
 | `modulateKaleid`, `modulateHue` | `modulatePixelate`, `modulateRepeat*`, `modulateScrollX/Y` |
+
+## Seamless tiling
+
+A cheaper, **approximate** alternative to coordinate mode. It is not hydra: the
+seam goes away, but the result differs from hydra in ways coordinate mode does not.
+
+Instead of evaluating the source at the final coordinates, it makes the source's
+0..1 tile wrap without a break, so image-mode coord ops downstream read a
+continuous texture. The wiring stays in hydra's order and any pixel format works.
+
+`osc`, `noise` and `voronoi` get a **Seamless** menu and a **Seam Width** on the
+Pipeline page. Off by default. Ignored in Coordinates mode.
+
+| option | how | what you lose |
+|---|---|---|
+| `Blend` | crossfade with copies of the source shifted half a tile, each weighted to zero along its own seam | ghosting inside a border band `Seam Width` wide; 4× the shader cost there |
+| `Snap` (`osc` only) | round `frequency` to a whole number of periods per tile, `2πk` | frequency moves in steps of 2π (60 → 62.8) |
+
+**Inside the band, Blend is exactly hydra.** At the default width of 0.3, the
+central 70% of each axis is untouched; only the border band crossfades.
+Narrow it for more exactness and a harder transition; widen it for a softer one.
+
+`noise` blends uncorrelated copies, which averages contrast down toward 0, so its
+spread is rescaled to compensate. `voronoi` is not compensated: its mean depends
+on its arguments.
+
+What no tiling can fix: the pattern now **repeats** every tile. After `scale(0.3)`
+you see a grid of copies where hydra shows one unbroken field. Only Coordinates
+mode avoids that.
+
+`shape`, `gradient` and `solid` have no Seamless option. `solid` never seams; the
+other two aren't periodic patterns, and a tiling version of them is a different
+picture.
 
 ## Extensions
 

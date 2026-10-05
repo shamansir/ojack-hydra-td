@@ -4,6 +4,8 @@
 
 uniform float time;          // -> absTime.seconds
 uniform float uvmode;        // -> Pipeline page, mode
+uniform float seamless;      // -> Pipeline page, seamless
+uniform float seamwidth;     // -> Pipeline page, seam width
 uniform float scale;
 uniform float speed;
 uniform float blending;
@@ -42,8 +44,36 @@ vec4 voronoi(vec2 _st, float scale, float speed, float blending) {
    return vec4(color, 1.0);
 }
 
+float _snap(float f) {
+   if (seamless < 1.5 || uvmode > 0.5) return f;
+   float k = max(1.0, floor(abs(f) / 6.283185307 + 0.5));
+   return (f < 0.0 ? -k : k) * 6.283185307;
+}
+
+vec4 _src(vec2 st) {
+   return voronoi(st, scale, speed, blending);
+}
+
+vec4 _seamless(vec2 st) {
+   vec4 c00 = _src(st);
+   vec2 w = smoothstep(1.0 - max(seamwidth, 0.001), 1.0, abs(st * 2.0 - 1.0));
+   if (w.x + w.y == 0.0) return c00;           // inside the band: plain hydra
+   vec2 sh = fract(st + 0.5);
+   vec4 c10 = _src(vec2(sh.x, st.y));
+   vec4 c01 = _src(vec2(st.x, sh.y));
+   vec4 c11 = _src(sh);
+   vec4 a = vec4((1.0 - w.x) * (1.0 - w.y), w.x * (1.0 - w.y),
+                 (1.0 - w.x) * w.y, w.x * w.y);
+   vec4 c = c00 * a.x + c10 * a.y + c01 * a.z + c11 * a.w;
+#ifdef SEAM_CENTER
+   c.rgb = SEAM_CENTER + (c.rgb - SEAM_CENTER) / length(a);
+#endif
+   return c;
+}
+
 void main() {
    vec2 st = vUV.st;
    if (uvmode > 0.5) st = texture(sTD2DInputs[COORD_IN], vUV.st).rg;
-   fragColor = TDOutputSwizzle(voronoi(st, scale, speed, blending));
+   bool blend = uvmode < 0.5 && seamless > 0.5 && seamless < 1.5;
+   fragColor = TDOutputSwizzle(blend ? _seamless(st) : _src(st));
 }

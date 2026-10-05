@@ -160,6 +160,18 @@ def make_mode_par(page):
     return m
 
 
+def make_seamless_pars(page, snap=False):
+    """Seamless tiling -- NOT hydra, off by default. See BUILD.md."""
+    s = page.appendMenu('Seamless', label='seamless')[0]
+    s.menuNames = ['off', 'blend'] + (['snap'] if snap else [])
+    s.menuLabels = ['Off', 'Blend'] + (['Snap'] if snap else [])
+    s.default = s.val = 'off'
+    w = page.appendFloat('Seamwidth', label='seam width')[0]
+    w.default = w.val = 0.3
+    w.normMin, w.normMax = 0.0, 1.0
+    return s, w
+
+
 def sort_pages(comp):
     """Same tab order on every component, whichever pages it happens to have."""
     have = [pg.name for pg in comp.customPages]
@@ -236,6 +248,10 @@ def uses_coordmode(text):
     return 'uniform float uvmode' in text
 
 
+def uses_seamless(text):
+    return 'uniform float seamless' in text
+
+
 def time_exec_source():
     """The Parameter Execute callbacks, embedded into each time-using component."""
     path = os.path.join(project.folder, HERE, 'time_exec.py')
@@ -257,6 +273,10 @@ def _uniforms(spec, text, par_exprs):
     if uses_coordmode(text):
         out.append(('uvmode',
                     ("1.0 if parent().par.Mode.eval() == 'coords' else 0.0",)))
+    if uses_seamless(text):
+        # menu index is the shader's code: 0 off, 1 blend, 2 snap
+        out.append(('seamless', ('parent().par.Seamless.menuIndex',)))
+        out.append(('seamwidth', ('parent().par.Seamwidth',)))
     for inp in spec['inputs']:
         n = inp['name']
         if inp['type'] == 'float':
@@ -407,6 +427,8 @@ def build(spec, dest):
     if uses_coordmode(text):
         ppage = comp.appendCustomPage('Pipeline')
         make_mode_par(ppage)
+        if uses_seamless(text):
+            make_seamless_pars(ppage, snap='#define SEAMLESS_SNAP' in text)
 
     sort_pages(comp)
 
@@ -725,6 +747,13 @@ def upgrade(dest, specs=None, depth=8):
                     or comp.appendCustomPage('Pipeline')
                 m = make_mode_par(page)
                 m.val = 'coords' if was_on else 'image'
+
+        # Seamless + Seam Width, for copies built before seamless tiling existed
+        if uses_seamless(text) and 'Seamless' not in {p.name for p in comp.pars()}:
+            page = next((pg for pg in comp.customPages
+                         if pg.name == 'Pipeline'), None) \
+                or comp.appendCustomPage('Pipeline')
+            make_seamless_pars(page, snap='#define SEAMLESS_SNAP' in text)
 
         # Argument plumbing, for copies predating the per-argument CHOP inputs:
         # the uniform expression is op('<arg>')[0].eval(), so a missing In CHOP

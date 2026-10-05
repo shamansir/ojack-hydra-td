@@ -78,6 +78,59 @@ MAIN = {
 }}""",
 }
 
+# Seamless tiling (seamless > 0.5) is NOT hydra. In image mode a coord op
+# downstream wraps off the 0..1 tile, and an unbounded source like osc does not
+# tile, so the wrap shows as a seam. This makes the tile's edges meet instead:
+#
+#   blend  crossfade with copies shifted half a tile (wrapped), each weighted to
+#          zero along its own seam. Only a border band of width `seamwidth`
+#          blends; everything inside it is exactly hydra.
+#   snap   round an argument to a whole number of periods per tile (osc only).
+#
+# Ignored in coordinate mode, which is exact and needs neither.
+#   snap:   the argument snapped to a multiple of 2*pi
+#   center: the value noise averages to -- blending uncorrelated copies flattens
+#           contrast toward it, so the spread is restored around it
+SEAMLESS = {
+    'osc':     {'snap': 'frequency'},
+    'noise':   {'center': '0.0'},
+    'voronoi': {},
+}
+
+MAIN_SEAMLESS = """float _snap(float f) {{
+   if (seamless < 1.5 || uvmode > 0.5) return f;
+   float k = max(1.0, floor(abs(f) / 6.283185307 + 0.5));
+   return (f < 0.0 ? -k : k) * 6.283185307;
+}}
+
+vec4 _src(vec2 st) {{
+   return {name}(st{args});
+}}
+
+vec4 _seamless(vec2 st) {{
+   vec4 c00 = _src(st);
+   vec2 w = smoothstep(1.0 - max(seamwidth, 0.001), 1.0, abs(st * 2.0 - 1.0));
+   if (w.x + w.y == 0.0) return c00;           // inside the band: plain hydra
+   vec2 sh = fract(st + 0.5);
+   vec4 c10 = _src(vec2(sh.x, st.y));
+   vec4 c01 = _src(vec2(st.x, sh.y));
+   vec4 c11 = _src(sh);
+   vec4 a = vec4((1.0 - w.x) * (1.0 - w.y), w.x * (1.0 - w.y),
+                 (1.0 - w.x) * w.y, w.x * w.y);
+   vec4 c = c00 * a.x + c10 * a.y + c01 * a.z + c11 * a.w;
+#ifdef SEAM_CENTER
+   c.rgb = SEAM_CENTER + (c.rgb - SEAM_CENTER) / length(a);
+#endif
+   return c;
+}}
+
+void main() {{
+   vec2 st = vUV.st;
+   if (uvmode > 0.5) st = texture(sTD2DInputs[COORD_IN], vUV.st).rg;
+   bool blend = uvmode < 0.5 && seamless > 0.5 && seamless < 1.5;
+   fragColor = TDOutputSwizzle(blend ? _seamless(st) : _src(st));
+}}"""
+
 # functions whose hydra body samples a named texture -- map it onto a TOP input
 TEXTURE_ALIAS = {
     'src':  ('tex', 'sTD2DInputs[0]'),
@@ -158,6 +211,10 @@ def emit(spec, utils):
     alias = TEXTURE_ALIAS.get(name)
     if kind in ('src', 'coord', 'combineCoord'):
         uniforms.append('uniform float uvmode;        // -> Pipeline page, mode')
+    seamless = SEAMLESS.get(name) if kind == 'src' else None
+    if seamless is not None:
+        uniforms.append('uniform float seamless;      // -> Pipeline page, seamless')
+        uniforms.append('uniform float seamwidth;     // -> Pipeline page, seam width')
     for i in inputs:
         if alias and i['name'] == alias[0]:
             continue                                   # becomes a TOP input
@@ -173,6 +230,14 @@ def emit(spec, utils):
         out += [f'#define COORD_IN {1 if alias else 0}', '']
     if alias:
         out += [f'#define {alias[0]} {alias[1]}', '']
+    if seamless is not None:
+        # the builder reads SEAMLESS_SNAP to decide whether to offer `snap`
+        if 'snap' in seamless:
+            out.append('#define SEAMLESS_SNAP')
+        if 'center' in seamless:
+            out.append(f"#define SEAM_CENTER {seamless['center']}")
+        if len(seamless):
+            out.append('')
     if 'texture2D' in body:
         out += ['#define texture2D texture', '']
 
@@ -206,11 +271,18 @@ def emit(spec, utils):
     ]
 
     # --- main() ---------------------------------------------------------------
-    call_args = [i['name'] for i in passed]
+    snap = seamless.get('snap') if seamless else None
+    call_args = [f'_snap({n})' if n == snap else n
+                 for n in (i['name'] for i in passed)]
     args = (', ' + ', '.join(call_args)) if call_args else ''
 
     has_amount = any(i.get('extension') == 'blend_amount' for i in inputs)
-    template = MAIN_COMBINE_AMOUNT if (has_amount and kind == 'combine') else MAIN[kind]
+    if seamless is not None:
+        template = MAIN_SEAMLESS
+    elif has_amount and kind == 'combine':
+        template = MAIN_COMBINE_AMOUNT
+    else:
+        template = MAIN[kind]
     out.append(template.format(name=fn, args=args))
     return '\n'.join(out) + '\n'
 
