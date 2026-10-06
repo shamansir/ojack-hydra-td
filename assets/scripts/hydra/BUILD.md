@@ -14,9 +14,9 @@ Research and design rationale: `claude/HYDRA_RESEARCH.md`.
 | `generate-hydra-functions.sh` | regenerates that JSON from hydra's source |
 | `hydra-utils.glsl` | hydra's `_noise`, `_luminance`, `_rgbToHsv`, `_hsvToRgb`, verbatim |
 | `build_hydra.py` | builds and upgrades the TD components from the JSON |
-| `hydra_compile.py` | generates each component's shader — embedded into every component |
+| `hydra_compile.py` | generates each component's shader, and every callback — embedded into every component; the builder loads it too, for the facts both share |
 | `fft_chop.py` | Script CHOP callbacks: hydra's `a.fft[n]` |
-| `time_exec.py` | Parameter Execute callbacks, embedded into time-using components |
+| `tests/` | the compiler and the builder's TD-free parts, against a mock graph |
 | `hydra_seq.py` | hydra's array arguments (`[1,2,3].fast().ease()`) — optional |
 
 There are no shader files: each component stores its function on itself and
@@ -56,6 +56,7 @@ b.spawn(['osc', 'osc', 'rotate', 'scale'])               # copies to patch with
 b.set_mode(op('/project1/sketch'), 'image')  # Mode on every placed component
 b.cook_report(op('/project1'))           # GPU/CPU cook time per component
 b.version_report(op('/project1'))        # components not built from the current code
+b.dump_shaders(op('/project1'))          # write every generated shader to build/hydra-shaders
 ```
 
 `build_all` and `rebuild` take `layout=False`, `audio=False`, `tox=False`,
@@ -79,9 +80,9 @@ b.version_report(op('/project1'))   # what is still stale
 
 `upgrade` runs the same `ensure()` as a fresh build: it creates whatever the copy
 lacks, rewrites what is generated (spec, compiler, callbacks, shader), and keeps
-wiring, parameter values and node positions. It identifies each component by its
-node name, then its `hydra:fn:` tag, so renamed copies (`hydra_osc3`) are still
-recognised.
+wiring, parameter values and node positions. It identifies each component by the
+spec stored on it, then its node name, then its `hydra:fn:` tag, so renamed copies
+(`hydra_osc3`) are still recognised.
 
 `build_all` replaces components one by one, so it leaves behind components whose
 function was renamed or removed upstream. `rebuild` does not.
@@ -148,9 +149,8 @@ hydra_osc/
   out                 Out TOP     also the component's Operator Viewer
   boundary0, …        Select TOPs textures from further up a compiled chain
   compile             Text DAT    hydra_compile.py, embedded
-  chain_exec          OP Execute DAT, recompiles on rewire / rename / Viewer flag
-  mode_exec           Parameter Execute DAT, recompiles on Mode / Compile
-  time_exec           Parameter Execute DAT, time-using functions only
+  chain_exec          OP Execute DAT: rewire / rename / Viewer flag
+  par_exec            Parameter Execute DAT: Mode, Compile, Propagate Time Expr
   storage hydra_spec  the function: body, inputs, utilities -- what `compile` reads
   + custom page 'Hydra'       one parameter per argument
   + custom page 'Pipeline'    mode (Compiled / Image), Compile
@@ -220,7 +220,7 @@ a `resolution` parameter, defaulting to `DEFAULT_RES` — 1280×720. Everything
 else takes the resolution of its chain's root source (Compiled) or of its input
 (Image), so setting the sources sets the chain.
 
-Retune a whole container at once:
+Retune every source under a container, nested ones included:
 
 ```python
 b.set_resolution(op('/project1/hydra'), 1280, 1280)
@@ -248,7 +248,7 @@ Menus are cloned from the GLSL TOP, so the entries are TD's own. Sources have no
 image input, so they get no smoothness control — how a source is read is decided
 by whoever samples it, i.e. the next component down.
 
-Set them across a container:
+Set them on every component under a container, nested ones included:
 
 ```python
 b.set_output(op('/project1/hydra'), smoothness='nearest')
@@ -288,9 +288,8 @@ It only writes into components carrying the `hydra` tag (see below), so an
 unrelated operator downstream that happens to have a parameter called Time is
 left alone. The pulse prints what it touched.
 
-The callback lives in a `time_exec` Parameter Execute DAT inside each such
-component, with the code embedded rather than file-synced, so exported `.tox`
-files carry it. `time_exec.py` is the editable master — change it and rebuild.
+The code is `propagate_time` in `hydra_compile.py`, reached through the
+component's `par_exec` — embedded, so exported `.tox` files carry it.
 
 Resetting the Time parameter to its default gives you `0`, not the expression;
 re-enter `absTime.seconds` or rebuild the component.
@@ -382,6 +381,35 @@ and CPU cook time per component. Components that did not cook report 0.
 The trigger callbacks rely on OP Execute toggles (`wirechange`, `flagchange`,
 `namechange`, `pathchange`); a `!!` line in the Textport at build time means a name
 differs in your TD build.
+
+## Tests
+
+```bash
+python3 -m unittest discover assets/scripts/hydra/tests
+```
+
+`tests/td_mock.py` models just enough of TouchDesigner — operators, connectors,
+storage — to run the compiler on real hydra specs. Its paths are deliberately
+opaque: `relativePath()` returns a token like `@12`, and only exact tokens resolve.
+TD's rules for combining relative paths are not ours to rely on, so any path the
+code builds instead of asking for fails, the way 0.2.0's did in TD.
+
+Run them before bumping `VERSION`. They do not replace a check in TD: the GLSL is
+checked for shape (balanced braces, every uniform used, no duplicate functions,
+no macro name clashing with a hydra body), not compiled.
+
+## Generated shaders on disk
+
+```python
+b.dump_shaders(op('/project1'))                      # -> build/hydra-shaders/
+b.dump_shaders(op('/project1/sketch'), root='/some/folder')
+```
+
+Writes each component's `pixel` text to `<path below dest>.frag`, e.g.
+`khoparzi1__hydra_add.frag`. Export only — nothing reads them back, and the folder
+is git-ignored. For reading, diffing two versions, or a GLSL validator. A Compiled
+component nothing looks at keeps its last shader, which may be stale; each file's
+header names what it was generated for.
 
 ## Versions
 

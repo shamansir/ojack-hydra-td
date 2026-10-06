@@ -10,7 +10,7 @@ Each component:
       glsl                GLSL TOP   (internals -- users never open this)
       out                 Out TOP    (also the component's Operator Viewer)
       compile             Text DAT   (hydra_compile.py, embedded)
-      chain_exec, mode_exec, time_exec   callbacks
+      chain_exec, par_exec   callback shims onto `compile`
     + custom pages Hydra, Pipeline, Time Sync, Output, Version
 
 Argument resolution, per input:
@@ -47,51 +47,55 @@ import json
 import os
 import re
 import time
+import types
 
 HERE = 'assets/scripts/hydra'
 TOX_ROOT = 'components/hydra'   # exported .tox tree, one folder per group
-HYDRA_TAG = 'hydra'             # marks generated components; survives .tox save
+DUMP_ROOT = 'build/hydra-shaders'   # dump_shaders() writes here
 DEFAULT_RES = (1280, 720)       # source components; everything else follows its input
 NONCOMMERCIAL_MAX = 1280        # the free licence caps output at 1280x1280
 
 # Shown on every component's Version page. Bump on every change to this file,
 # hydra_compile.py or hydra-utils.glsl -- it is how a placed copy says which
 # code it was built from. The Compiler hash on that page changes by itself.
-VERSION = '0.2.1'
+VERSION = '0.3.0'
 
 # custom pages, in the order every component should show them
 PAGE_ORDER = ('Hydra', 'Pipeline', 'Time Sync', 'Output', 'Version')
 
 MODES = (('compiled', 'Compiled'), ('image', 'Image'))     # first is the default
 
-# image inputs per hydra function class; `source` is always input 0
-CLASS_INPUTS = {
-    'src':          [],
-    'coord':        ['source'],
-    'color':        ['source'],
-    'combine':      ['source', 'with'],
-    'combineCoord': ['source', 'modulator'],   # modulator is hydra's _c0
-}
 
-# functions whose class says "no image input" but whose body samples a texture:
-# `src` takes an external TOP, `prev` takes the feedback of the chain's output
-NAME_INPUTS = {
-    'src':  ['source'],
-    'prev': ['source'],
-}
-TEXTURE_ALIAS = {'src': 'tex', 'prev': 'prevBuffer'}   # the sampler they name
-
-UTILS = ('_luminance', '_noise', '_rgbToHsv', '_hsvToRgb')
+def _source_path(rel):
+    """A file next to this one: through the project in TD, through __file__
+    outside it (the tests)."""
+    try:
+        return os.path.join(project.folder, HERE, rel)
+    except NameError:
+        return os.path.join(os.path.dirname(os.path.abspath(__file__)), rel)
 
 
-def inputs_for(spec):
-    return NAME_INPUTS.get(spec['name'], CLASS_INPUTS[spec['type']])
+def _read(rel):
+    try:
+        with open(_source_path(rel)) as f:
+            return f.read()
+    except OSError:
+        print(f'  !! cannot read {_source_path(rel)}')
+        return ''
 
 
-def uses_of(spec):
-    """Which of hydra's globals the function body reads."""
-    return [w for w in ('time', 'resolution')
-            if re.search(rf'\b{w}\b', spec.get('glsl', ''))]
+def _load_core():
+    """hydra_compile.py as a module. The facts it and this file both need --
+    classes, inputs, naming -- are defined there once and taken from there."""
+    m = types.ModuleType('hydra_compile')
+    exec(compile(_read('hydra_compile.py'), 'hydra_compile.py', 'exec'), m.__dict__)
+    return m
+
+
+core = _load_core()
+HYDRA_TAG, SPEC_KEY = core.HYDRA_TAG, core.SPEC_KEY
+CLASS_INPUTS, TEXTURE_ALIAS, UTILS = core.CLASS_INPUTS, core.TEXTURE_ALIAS, core.UTILS
+inputs_for, uses_of, par_name = core.inputs_for, core.uses_of, core.par_name
 
 
 # hydra's documentation groups are exactly its five GLSL classes. Colours are
@@ -128,11 +132,6 @@ SLICE = [
 
 
 # --- small TD helpers -------------------------------------------------------------
-
-def par_name(hydra_name):
-    """repeatX -> Repeatx. TD custom par names are Capitalized alphanumerics."""
-    return hydra_name[0].upper() + hydra_name[1:].lower()
-
 
 def set_menu(par, *needles):
     for i, n in enumerate(par.menuNames):
@@ -224,20 +223,10 @@ def _toggle(o, *candidates):
         p.val = True
 
 
-def _read(rel):
-    path = os.path.join(project.folder, HERE, rel)
-    try:
-        with open(path) as f:
-            return f.read()
-    except OSError:
-        print(f'  !! cannot read {path}')
-        return ''
-
-
 # --- specs ------------------------------------------------------------------------
 
 def load_specs():
-    path = os.path.join(project.folder, HERE, 'hydra-functions.json')
+    path = _source_path('hydra-functions.json')
     if not os.path.exists(path):
         return SLICE
     with open(path) as f:
@@ -245,7 +234,7 @@ def load_specs():
 
     # hydra-extensions.json adds inputs hydra itself does not have (see that
     # file). Kept separate so regenerating the upstream table cannot drop them.
-    ext_path = os.path.join(project.folder, HERE, 'hydra-extensions.json')
+    ext_path = _source_path('hydra-extensions.json')
     if os.path.exists(ext_path):
         with open(ext_path) as f:
             extensions = json.load(f)
@@ -271,14 +260,14 @@ def store_spec(comp, spec, utils):
     compiled into -- needs neither the JSON nor any file, only this.
     """
     body = spec.get('glsl', '')
-    comp.store('hydra_spec', {
+    comp.store(SPEC_KEY, {
         'name': spec['name'],
         'type': spec['type'],
         'inputs': spec['inputs'],
         'glsl': body,
         'utils': {u: utils[u] for u in UTILS
                   if u in utils and re.search(rf'\b{u}\b', body)},
-        'uses': uses_of(spec),
+        'uses': uses_of(body),
         'alias': TEXTURE_ALIAS.get(spec['name']),
     })
 
@@ -332,39 +321,26 @@ def version_report(dest, depth=8):
 
 TIME_DEFAULT_EXPR = 'absTime.seconds'
 
-CHAIN_EXEC = '''# OP Execute callbacks -- GENERATED by build_hydra, do not edit.
-# Recompile this component (and what depends on it) when the chain changes.
+def _shim(kind, callbacks):
+    """Exec DAT text whose every callback forwards to the `compile` module, so
+    all embedded code is hydra_compile.py, under the one hash on Version."""
+    lines = [f'# {kind} callbacks -- GENERATED by build_hydra, do not edit.',
+             '# The code is in the `compile` DAT (hydra_compile.py).', '']
+    for sig, call in callbacks:
+        lines += [f'def {sig}:', f"    op('compile').module.{call}", '    return', '']
+    return '\n'.join(lines)
 
-def _c():
-    return op('compile').module
 
-def onWireChange(changeOp):
-    _c().schedule(parent(), down=True, up=True)
-    return
-
-def onFlagChange(changeOp, *args):
-    _c().schedule(parent(), down=False)    # the Viewer flag decides compiling
-    return
-
-def onNameChange(changeOp):
-    _c().schedule(parent(), down=True)     # compiled chains refer to it by path
-    return
-
-def onPathChange(changeOp):
-    _c().schedule(parent(), down=True)
-    return
-'''
-
-MODE_EXEC = '''# Parameter Execute callbacks -- GENERATED by build_hydra, do not edit.
-
-def onValueChange(par, prev):
-    op('compile').module.schedule(parent(), down=True, up=True)
-    return
-
-def onPulse(par):
-    op('compile').module.schedule(parent(), down=True, up=True)
-    return
-'''
+CHAIN_EXEC = _shim('OP Execute', [
+    ('onWireChange(changeOp)', 'on_wire(parent())'),
+    ('onFlagChange(changeOp, *args)', 'on_flag(parent())'),
+    ('onNameChange(changeOp)', 'on_rename(parent())'),
+    ('onPathChange(changeOp)', 'on_rename(parent())'),
+])
+PAR_EXEC = _shim('Parameter Execute', [
+    ('onValueChange(par, prev)', 'on_par(par)'),
+    ('onPulse(par)', 'on_par(par)'),
+])
 
 
 def _exec_dat(comp, optype, name, x, text, pars):
@@ -381,7 +357,7 @@ def _exec_dat(comp, optype, name, x, text, pars):
 
 
 def install_callbacks(comp, uses):
-    """The `compile` module and the callbacks that drive it. Idempotent.
+    """The `compile` module and the shims that drive it. Idempotent.
 
     Embedded rather than file-synced, so an exported .tox carries its own code.
     """
@@ -391,24 +367,20 @@ def install_callbacks(comp, uses):
     for t in ('wirechange', 'flagchange', 'namechange', 'pathchange'):
         _toggle(chain, t)
 
-    mexec = _exec_dat(comp, parameterexecuteDAT, 'mode_exec', 600, MODE_EXEC,
-                      'Mode Compile')
-    _toggle(mexec, 'valuechange')
-    _toggle(mexec, 'pulse', 'onpulse')
-
-    if 'time' in uses:
-        texec = _exec_dat(comp, parameterexecuteDAT, 'time_exec', -200,
-                          _read('time_exec.py'), 'Propagatetime')
-        _toggle(texec, 'pulse', 'onpulse')
+    pars = 'Mode Compile' + (' Propagatetime' if 'time' in uses else '')
+    pexec = _exec_dat(comp, parameterexecuteDAT, 'par_exec', 600, PAR_EXEC, pars)
+    _toggle(pexec, 'valuechange')
+    _toggle(pexec, 'pulse', 'onpulse')
 
 
 # --- one component ------------------------------------------------------------------
 
-# Leftovers of Coordinates mode and Seamless tiling (removed in 0.2.0) and of the
-# file-synced shaders before them. Safe to delete once nothing older than 0.2.0
-# is around -- `version_report` says.
+# Leftovers of Coordinates mode and Seamless tiling (removed in 0.2.0), of the
+# file-synced shaders before them, and of the separate callback DATs (merged
+# into par_exec in 0.3.0). Safe to delete once nothing older than 0.3.0 is
+# around -- `version_report` says.
 LEGACY_PARS = ('Seamless', 'Seamwidth', 'Coordmode')
-LEGACY_OPS = ('coords', 'pixel_compiled')
+LEGACY_OPS = ('coords', 'pixel_compiled', 'mode_exec', 'time_exec')
 
 
 def _drop_legacy(comp):
@@ -456,7 +428,7 @@ def ensure(comp, spec, utils=None, chash=None):
     image_inputs = inputs_for(spec)
     floats = [i for i in spec['inputs'] if i['type'] == 'float']
     vecs = [i for i in spec['inputs'] if i['type'].startswith('vec')]
-    uses = uses_of(spec)
+    uses = uses_of(spec.get('glsl', ''))
     _drop_legacy(comp)
     have = custom_names(comp)
 
@@ -748,11 +720,14 @@ def spawn(names, dest=None, lib=None, postfix='', spacing=200, x=0, y=0):
 def spec_name(comp, by_name):
     """Which hydra function a placed component is, despite renaming.
 
-    The node name comes first: it is what the user sees, and copies only mangle
-    it in two predictable ways -- TD appends digits on collision (hydra_osc3),
-    users append their own suffixes (hydra_scrollx_rangga3x). The `hydra:fn:`
-    tag is the fallback.
+    The spec it stores comes first -- every component built since 0.2.0 carries
+    one. Then the node name: copies only mangle it in two predictable ways --
+    TD appends digits on collision (hydra_osc3), users append their own
+    suffixes (hydra_scrollx_rangga3x). The `hydra:fn:` tag is the last resort.
     """
+    stored = comp.fetch(SPEC_KEY, None, search=False)
+    if stored and stored.get('name', '').lower() in by_name:
+        return stored['name'].lower()
     base = comp.name[len('hydra_'):] if comp.name.startswith('hydra_') else comp.name
     for candidate in (base,
                       base.rstrip('0123456789'),
@@ -857,12 +832,10 @@ def cook_report(dest, depth=8):
     return gpu, cpu
 
 
-def set_resolution(dest, width, height):
-    """Retune every generated source component's output resolution."""
+def set_resolution(dest, width, height, depth=8):
+    """Retune every hydra source component's output resolution under `dest`."""
     n = 0
-    for child in dest.children:
-        if HYDRA_TAG not in child.tags:
-            continue
+    for child in _placed(dest, depth):
         pars = sorted(child.pars('Resolution*'), key=lambda p: p.name)
         if len(pars) >= 2:
             pars[0].val, pars[1].val = width, height
@@ -874,8 +847,9 @@ def set_resolution(dest, width, height):
     return n
 
 
-def set_output(dest, smoothness=None, pixel_format=None):
-    """Set Input Smoothness / Pixel Format across a container, by substring.
+def set_output(dest, smoothness=None, pixel_format=None, depth=8):
+    """Set Input Smoothness / Pixel Format on every hydra component under
+    `dest`, by substring.
 
         set_output(dest, smoothness='nearest')
         set_output(dest, pixel_format='8-bit')
@@ -884,9 +858,7 @@ def set_output(dest, smoothness=None, pixel_format=None):
     does not match prints its available options.
     """
     smoothed = formatted = 0
-    for child in dest.children:
-        if HYDRA_TAG not in child.tags:
-            continue
+    for child in _placed(dest, depth):
         if smoothness and 'Inputsmoothness' in {p.name for p in child.pars()}:
             set_menu(child.par.Inputsmoothness, smoothness.lower())
             smoothed += 1
@@ -897,6 +869,31 @@ def set_output(dest, smoothness=None, pixel_format=None):
         print(f'set input smoothness on {smoothed} component(s)')
     if pixel_format:
         print(f'set pixel format on {formatted} component(s)')
+
+
+def dump_shaders(dest, root=None, depth=8):
+    """Write every hydra component's generated shader under `dest` to disk.
+
+    Export only -- nothing reads these back. For reading, diffing between
+    versions, or feeding a GLSL validator. One file per component, named after
+    its path below `dest`: <root>/khoparzi1__hydra_add.frag. Compiled components
+    nothing looks at keep their last shader, which may be stale -- the header of
+    each file names the component it was generated for.
+    """
+    root = root or _source_path(os.path.join('..', '..', '..', DUMP_ROOT))
+    root = os.path.normpath(root)
+    os.makedirs(root, exist_ok=True)
+    written = 0
+    for c in _placed(dest, depth):
+        dat = c.op('pixel')
+        if not dat or not dat.text.strip():
+            continue
+        rel = c.path[len(dest.path):].strip('/').replace('/', '__') or c.name
+        with open(os.path.join(root, f'{rel}.frag'), 'w') as f:
+            f.write(dat.text)
+        written += 1
+    print(f'wrote {written} shader(s) to {root}')
+    return written
 
 
 def is_annotate(o):
