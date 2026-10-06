@@ -56,6 +56,7 @@ b.build(spec, op('/project1/hydra'))  # a single component, from one spec dict
 b.spawn(['osc', 'osc', 'rotate', 'scale'])               # copies to patch with
 b.set_mode(op('/project1'), 'compiled')  # Mode on every placed component
 b.cook_report(op('/project1'))           # GPU/CPU cook time per component
+b.version_report(op('/project1'))        # components not built from the current code
 ```
 
 `build_all` and `rebuild` take `layout=False`, `audio=False`, `tox=False`,
@@ -162,6 +163,7 @@ hydra_osc/
                               seamless tiling (osc, noise, voronoi)
   + custom page 'Time Sync'   time-using functions only
   + custom page 'Output'      resolution (sources), input smoothness, pixel format
+  + custom page 'Version'     version, compiler hash, build time -- read only
 
 Pages always appear in that order (`PAGE_ORDER`), whichever of them a given
 function happens to have.
@@ -464,6 +466,27 @@ mode avoids that.
 `shape`, `gradient` and `solid` have no Seamless option. `solid` never seams; the
 other two aren't periodic patterns, and a tiling version of them is a different
 picture.
+
+## Versions
+
+Every component carries a read-only **Version** page:
+
+| field | what it is |
+|---|---|
+| `version` | `VERSION` in `build_hydra.py` — bumped by hand on every change to the builder, the compiler, the emitter or the shaders |
+| `compiler` | first 8 hex digits of the SHA-1 of `hydra_compile.py` — the embedded `compile` DAT; `-` on components without one |
+| `built` | when this copy was built or last upgraded |
+
+`build` and `upgrade` stamp it; spawned copies inherit the library's. The compiler
+hash changes by itself, so it catches a copy that missed an `upgrade` even when
+`VERSION` was not bumped.
+
+```python
+b.version_report(op('/project1'))   # lists every stale copy; empty = all current
+```
+
+When reporting a problem, the version and compiler hash of the component
+involved say exactly which code it runs.
 
 ## Extensions
 

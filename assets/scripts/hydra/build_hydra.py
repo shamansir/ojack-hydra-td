@@ -35,9 +35,11 @@ the target container -- keep these in their own container, not next to work you
 care about.
 """
 
+import hashlib
 import json
 import os
 import re
+import time
 
 HERE = 'assets/scripts/hydra'
 SHADERS = f'{HERE}/shader'   # .frag files live here
@@ -46,8 +48,13 @@ HYDRA_TAG = 'hydra'             # marks generated components; survives .tox save
 DEFAULT_RES = (1280, 720)       # source components; everything else follows its input
 NONCOMMERCIAL_MAX = 1280        # the free licence caps output at 1280x1280
 
+# Shown on every component's Version page. Bump on every change to this file,
+# hydra_compile.py, emit_frags.py or the shaders -- it is how a placed copy says
+# which code it was built from. The Compiler hash on that page changes by itself.
+VERSION = '0.1.0'
+
 # custom pages, in the order every component should show them
-PAGE_ORDER = ('Hydra', 'Pipeline', 'Time Sync', 'Output')
+PAGE_ORDER = ('Hydra', 'Pipeline', 'Time Sync', 'Output', 'Version')
 
 # image inputs per hydra function class; `source` is always input 0
 CLASS_INPUTS = {
@@ -177,6 +184,53 @@ def make_seamless_pars(page, snap=False):
     w.default = w.val = 0.3
     w.normMin, w.normMax = 0.0, 1.0
     return s, w
+
+
+def compiler_hash():
+    """Short hash of hydra_compile.py -- what the embedded `compile` DAT holds."""
+    return hashlib.sha1(compile_source().encode()).hexdigest()[:8]
+
+
+VERSION_PARS = (('Version', 'version'), ('Compiler', 'compiler'), ('Built', 'built'))
+
+
+def stamp_version(comp, chash=None):
+    """Write the read-only Version page. Idempotent -- build and upgrade call it."""
+    page = next((pg for pg in comp.customPages if pg.name == 'Version'), None) \
+        or comp.appendCustomPage('Version')
+    names = {p.name for p in comp.customPars}
+    for name, label in VERSION_PARS:
+        if name not in names:
+            page.appendStr(name, label=label)
+    values = {'Version': VERSION,
+              'Compiler': (chash or compiler_hash()) if comp.op('compile') else '-',
+              'Built': time.strftime('%Y-%m-%d %H:%M')}
+    for name, value in values.items():
+        p = comp.par[name]
+        p.readOnly = False              # readOnly guards the UI; lift it to write
+        p.val = value
+        p.readOnly = True
+
+
+def version_report(dest, depth=8):
+    """List hydra components under `dest` not built from the current code."""
+    chash = compiler_hash()
+    try:
+        found = dest.findChildren(tags=[HYDRA_TAG], type=COMP, maxDepth=depth)
+    except Exception:
+        found = [c for c in dest.children if HYDRA_TAG in c.tags]
+    stale = []
+    for c in found:
+        names = {p.name for p in c.customPars}
+        v = c.par.Version.eval() if 'Version' in names else '(none)'
+        h = c.par.Compiler.eval() if 'Compiler' in names else '(none)'
+        if v != VERSION or (h not in ('-', chash)):
+            stale.append(c)
+            print(f'  {c.path}: version {v}, compiler {h}')
+    print(f'current: version {VERSION}, compiler {chash} -- '
+          f'{len(stale)} of {len(found)} component(s) stale'
+          + (' -- run upgrade()' if stale else ''))
+    return stale
 
 
 def sort_pages(comp):
@@ -596,6 +650,8 @@ def build(spec, dest):
     if compiles:
         store_spec(comp, spec, [t.name for t in in_tops], uniforms)
         install_compiler(comp)
+    stamp_version(comp)                 # after install: it hashes the compiler
+    sort_pages(comp)
 
     print(f'{comp_name}: {kind}, {len(in_tops)} TOP in, '
           f'{len(floats)} CHOP in, {len(uniforms)} uniforms')
@@ -659,6 +715,8 @@ def build_audio(dest):
         viewer.val = './out'
     comp.color = AUDIO_COLOR
     comp.tags = {HYDRA_TAG, 'hydra:fn:fft', 'hydra:class:audio'}
+    stamp_version(comp)
+    sort_pages(comp)
     print('hydra_fft: audio CHOP in, fft_0..fft_n + vol out')
     return comp
 
@@ -810,6 +868,7 @@ def upgrade(dest, specs=None, depth=8):
     specs = specs or load_specs()
     by_name = {s['name'].lower(): s for s in specs}
     utils = load_utils()
+    chash = compiler_hash()
 
     # Copies made before tagging existed carry no `hydra` tag, so searching by
     # tag alone silently skips exactly the components most in need of repair.
@@ -830,7 +889,9 @@ def upgrade(dest, specs=None, depth=8):
         spec = by_name.get(name) if name else None
         glsl = comp.op('glsl')
         if comp.name.startswith('hydra_fft'):
-            continue                            # built by build_audio, has no spec
+            stamp_version(comp, chash)          # built by build_audio, has no spec
+            sort_pages(comp)
+            continue
         if spec is None or glsl is None:
             skipped.append(comp.name)
             continue
@@ -949,7 +1010,6 @@ def upgrade(dest, specs=None, depth=8):
                     par_exprs[inp['name']] = tuple(f'parent().par.{p.name}'
                                                    for p in pars)
 
-        sort_pages(comp)
         try:
             uniforms = apply_uniforms(glsl, spec, text, par_exprs)
             if compiles:
@@ -960,6 +1020,8 @@ def upgrade(dest, specs=None, depth=8):
                 if comp.par.Mode.eval() == 'compiled':
                     # apply_uniforms just put the image-mode uniforms back
                     comp.op('compile').module.schedule(comp, down=False)
+            stamp_version(comp, chash)          # only once the rest succeeded
+            sort_pages(comp)
         except Exception as e:                  # never let one bad comp stop the sweep
             failed.append(f'{comp.name} ({e})')
             continue
