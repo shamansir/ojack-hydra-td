@@ -54,7 +54,7 @@ class Identification(unittest.TestCase):
         comp = HydraComp('osc', name='hydra_rotate_but_really_osc', parent=network())
         self.assertEqual(b.spec_name(comp, by_name), 'osc')
 
-    def test_name_then_tag_without_a_stored_spec(self):
+    def test_tag_without_a_stored_spec(self):
         by_name = {s['name'].lower(): s for s in b.load_specs()}
         comp = HydraComp('scrollX', name='hydra_scrollx_rangga3', parent=network())
         comp.storage.clear()
@@ -76,9 +76,9 @@ class Shims(unittest.TestCase):
 class Names(unittest.TestCase):
 
     def test_expand_names(self):
-        self.assertEqual(b.expand_names('osc*2 3*rotate scale'),
+        self.assertEqual(b.expand_names('osc*2 rotate*3 scale'),
                          ['osc', 'osc', 'rotate', 'rotate', 'rotate', 'scale'])
-        self.assertEqual(b.expand_names(['osc * 2']), ['osc', 'osc'])
+        self.assertEqual(b.expand_names(['osc*2', 'noise']), ['osc', 'osc', 'noise'])
 
 
 if __name__ == '__main__':

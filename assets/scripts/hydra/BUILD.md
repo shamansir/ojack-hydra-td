@@ -81,8 +81,8 @@ b.version_report(op('/project1'))   # what is still stale
 `upgrade` runs the same `ensure()` as a fresh build: it creates whatever the copy
 lacks, rewrites what is generated (spec, compiler, callbacks, shader), and keeps
 wiring, parameter values and node positions. It identifies each component by the
-spec stored on it, then its node name, then its `hydra:fn:` tag, so renamed copies
-(`hydra_osc3`) are still recognised.
+spec stored on it, else its `hydra:fn:` tag — never by name, so renamed copies are
+recognised.
 
 `build_all` replaces components one by one, so it leaves behind components whose
 function was renamed or removed upstream. `rebuild` does not.
@@ -188,8 +188,7 @@ b.spawn(['noise'], dest=op('/project1/sketch2'))
 b.spawn(['osc'], lib=op('/some/other/hydra'))  # a different library
 ```
 
-`osc*3`, `3*osc` and `osc * 3` are equivalent, and a whitespace-separated string
-works in place of a list.
+`name*count` repeats a name; a whitespace-separated string works in place of a list.
 
 Repeats in the list are fine — each copy gets a numeric suffix, so
 `['osc', 'osc']` yields `hydra_osc` and `hydra_osc1`. `postfix` lands before that
@@ -379,8 +378,7 @@ Renames recompile by themselves.
 and CPU cook time per component. Components that did not cook report 0.
 
 The trigger callbacks rely on OP Execute toggles (`wirechange`, `flagchange`,
-`namechange`, `pathchange`); a `!!` line in the Textport at build time means a name
-differs in your TD build.
+`namechange`, `pathchange`).
 
 ## Tests
 
@@ -484,8 +482,7 @@ Every generated component is tagged, and tags survive a `.tox` save/load:
 | `hydra:class:<class>` | which group, e.g. `hydra:class:combineCoord` |
 
 The `fn:`/`class:` namespacing is load-bearing: a bare `hydra:src` could be the
-class of every source or the *function* named `src`. `upgrade` rewrites the tags
-and identifies components by node name first.
+class of every source or the *function* named `src`.
 
 This is how **Propagate Time Expr** tells hydra components from everything else,
 and how `clear` finds what to remove even if someone renamed a component. To find
@@ -522,9 +519,9 @@ as it fits one of the five classes. Things worth knowing before editing:
 - `GROUPS` / `GROUP_ORDER` — group labels, colours and vertical order.
 - `EXTRA_MEMBERS` — components not in the JSON that still belong to a group
   (that's how `hydra_fft` joins Audio).
-- `NAME_INPUTS` — per-function overrides for image inputs. `src` and `prev` are
-  class `src` but still need a TOP input.
+- `CLASS_INPUTS` / `TEXTURE_INPUT` in `hydra_compile.py` — image inputs per class;
+  `src` and `prev` are class `src` but still read a texture.
 - `CELL_W` / `CELL_H` / `COLS` / `PAD` — layout grid.
-- `find_par`, `set_menu`, `set_color_par` — all take candidate names and print
-  what exists when nothing matches. TD parameter spellings vary between builds;
-  when something silently doesn't apply, look for a `!!` line in the Textport.
+- TD parameter names are written exactly as TD's offline help gives them
+  (`/Applications/TouchDesigner.app/Contents/Resources/tfs/Samples/Learn/OfflineHelp`).
+  Only In OPs' `connectorder` is not documented there, so `set_order` checks for it.

@@ -1,39 +1,10 @@
-"""Generate a hydra component's shader -- fused with its upstream chain, the way
-hydra does, or on its own.
+"""Generate a hydra component's shader: fused with its upstream chain, as
+hydra's generate-glsl.js (v1.3.29) does, in Compiled mode -- on its own in
+Image mode. Also every callback the component's exec DATs forward to.
 
-Hydra never rasterizes intermediate stages. `osc().rotate().posterize()` becomes
-one shader, `posterize(osc(rotate(st, ...), ...), ...)`, so the source is
-evaluated analytically at the final coordinate -- no wrap, no seam, no
-resampling. This module walks the TD wiring upstream from a component and emits
-that same chain (hydra src/generate-glsl.js, v1.3.29), then installs it in the
-component's GLSL TOP.
-
-Embedded verbatim into every component as the `compile` Text DAT, so an
-exported .tox carries it -- this file is the editable master. Re-run the
-builder (or `upgrade`) after changing it.
-
-Two modes, on the component's Pipeline page:
-
-  Compiled  every upstream component that is itself Compiled is inlined. Each
-            becomes one instance of its function, body verbatim, renamed
-            <fn>_<k>, with its arguments as uniforms u<k>_<arg> reading that
-            component's own CHOP input. `time` is #defined per instance to that
-            component's Time, so per-component clocks survive; with equal clocks
-            this is exactly hydra.
-  Image     nothing is inlined: the component's own function, its inputs read as
-            textures. A render-here point -- downstream components read its
-            texture instead of re-evaluating it, which is cheaper for a slow or
-            static source shared by several branches.
-
-Anything not inlined is a boundary, read as texture(<input>, fract(uv)) -- what
-hydra's own src() does: an Image-mode component, a plain TD TOP, the texture fed
-to `src`/`prev`. A boundary is always the In TOP of the component that reads it:
-wired straight into the GLSL TOP when that is this component, through a Select
-TOP when it is further up the chain.
-
-A Compiled component is only (re)compiled when something looks at it: Viewer on,
-or an output -- its texture is read by something outside a compiled chain.
-Everything else keeps its last shader and, with nothing pulling it, never cooks.
+Embedded into every component as the `compile` Text DAT; this file is the
+master -- `upgrade` after changing it. How the modes, boundaries and triggers
+behave: BUILD.md, "Modes".
 """
 
 # --- shared facts -----------------------------------------------------------------
@@ -442,9 +413,6 @@ def install(comp, inline):
     # compiles, and does not recompile when they change afterwards.
     _set_inputs(comp, glsl, chain.boundaries)
     _set_uniforms(glsl, uniforms)
-    if dat.par.syncfile.eval():
-        dat.par.syncfile = False     # never write generated text back to a file
-        dat.par.file = ''
     dat.text = text
     if glsl.par.pixeldat.eval() != dat:
         glsl.par.pixeldat = dat

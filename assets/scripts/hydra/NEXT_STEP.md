@@ -1,5 +1,23 @@
 # Next step
 
+## Done in 0.4.0 (2026-10-06)
+
+Runtime Python 1629 → 1362 lines (`build_hydra.py` 1072 → 837,
+`hydra_compile.py` 557 → 525). Not yet run in TouchDesigner; 27 tests pass.
+
+- TD parameter names written exactly, checked against TD's offline help;
+  `find_par` and its candidate lists, `_toggle`, `set_color_par`, `darken` gone.
+  Constant CHOP is `const0name`/`const0value` — the first candidates tried before,
+  `name0`/`value0`, never existed.
+- Migration code from 0.2.0/0.3.0 dropped: `_drop_legacy`, the Mode menu rewrite,
+  the `hydra_coords` notice, the `pixel` un-sync guard, name-based identification
+  and the untagged-copy search.
+- `SLICE` dropped; `expand_names` takes `name*count` only.
+- Module and function docstrings that repeated BUILD.md shortened.
+
+Verified in TD (2026-10-06): connectors keep hydra's order — `connectorder`
+exists on In OPs even though the offline help does not list it.
+
 ## Done in 0.3.0 (2026-10-06)
 
 Not yet run in TouchDesigner. `python3 -m unittest discover assets/scripts/hydra/tests`
@@ -77,10 +95,3 @@ it could filter to the viewer flag — first print what `flag` contains in this 
 build. Keep the boundary-input count in the shader header: TD sizes
 `sTD2DInputs[]` at compile time and does not recompile when only the inputs
 change.
-
-### Drop the 0.2.0 / 0.3.0 migrations
-
-`LEGACY_PARS` / `LEGACY_OPS` / `_drop_legacy` in `build_hydra.py`, the `coords` →
-`compiled` mapping in `_ensure_mode`, and the `hydra_coords` notice in `upgrade`
-can go once `version_report` shows nothing older than 0.3.0 anywhere — including
-the other `.toe` files and exported `.tox` trees.
