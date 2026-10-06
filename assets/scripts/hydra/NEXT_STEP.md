@@ -133,6 +133,9 @@ frame. Viewing intermediates multiplies the count.
 - Compare the generated text and uniforms with what's already installed, and skip
   writing if nothing changed. Every unrelated flag change (display, bypass, lock)
   currently rewrites `pixel_compiled` and forces a GLSL recompile.
+  Keep the boundary-input count in the comparison (the shader header already
+  carries it): TD sizes `sTD2DInputs[]` at compile time and does not recompile
+  when only the inputs change — that was the Feedback bug of 2026-10-06.
 - `onFlagChange` in `CHAIN_EXEC` (`build_hydra.py`) could react only to the
   viewer flag — first print what `flag` actually contains in this TD build.
 
