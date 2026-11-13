@@ -25,7 +25,7 @@ NONCOMMERCIAL_MAX = 1280        # the free licence caps output at 1280x1280
 # Shown on every component's Version page. Bump on every change to this file,
 # hydra_compile.py or hydra-utils.glsl -- it is how a placed copy says which
 # code it was built from. The Compiler hash on that page changes by itself.
-VERSION = '0.4.0'
+VERSION = '0.4.1'
 
 # custom pages, in the order every component should show them
 PAGE_ORDER = ('Hydra', 'Pipeline', 'Time Sync', 'Output', 'Version')
@@ -202,15 +202,19 @@ def compiler_hash():
 VERSION_PARS = (('Version', 'version'), ('Compiler', 'compiler'), ('Built', 'built'))
 
 
-def stamp_version(comp, chash=None):
-    """Write the read-only Version page. Idempotent -- build and upgrade call it."""
+def stamp_version(comp, chash=None, compiler=None):
+    """Write the read-only Version page. Idempotent -- build and upgrade call it,
+    and build_all on the library container (compiler=True: it holds no `compile`
+    DAT itself, but every component in it embeds that compiler)."""
+    if compiler is None:
+        compiler = bool(comp.op('compile'))
     page = get_page(comp, 'Version')
     have = custom_names(comp)
     for name, label in VERSION_PARS:
         if name not in have:
             page.appendStr(name, label=label)
     values = {'Version': VERSION,
-              'Compiler': (chash or compiler_hash()) if comp.op('compile') else '-',
+              'Compiler': (chash or compiler_hash()) if compiler else '-',
               'Built': time.strftime('%Y-%m-%d %H:%M')}
     for name, value in values.items():
         p = comp.par[name]
@@ -483,6 +487,115 @@ def build_audio(dest):
     print('hydra_fft: audio CHOP in, fft_0..fft_n + vol out')
     return comp
 
+COVER = 'cover'            # the library's own viewer; not tagged, so clear() keeps it
+COVER_RES = (1280, 720)
+COVER_WOBBLE = 0.02        # Displace weight of the title, both axes
+COVER_GAP = 40             # between cover and build_hydra below it
+
+
+def place_cover(dest, cover):
+    """Directly above the `build_hydra` DAT, same width, viewer-shaped (16:9)."""
+    anchor = dest.op('build_hydra')
+    if not anchor:
+        cover.nodeX, cover.nodeY = -2 * CELL_W, 0
+        return
+    w = anchor.nodeWidth
+    cover.nodeX, cover.nodeWidth = anchor.nodeX, w
+    cover.nodeHeight = round(w * COVER_RES[1] / COVER_RES[0])
+    cover.nodeY = anchor.nodeY + anchor.nodeHeight + COVER_GAP   # nodeY is the bottom edge
+
+
+def _refresh_viewer(comp, path):
+    """Point comp's Operator Viewer at `path` and make the node viewer pick it up.
+
+    The old cover was destroyed and a new one made under the same path, so the
+    parameter text does not change and an open viewer keeps showing the dead
+    one. Clear it and the Viewer flag now, restore both a frame later -- a
+    real change TD redraws."""
+    comp.par.opviewer = ''
+    comp.viewer = False
+    run(f"o = op({comp.path!r})\n"
+        f"if o: o.par.opviewer = {path!r}; o.viewer = True",
+        delayFrames=1)
+
+
+def build_cover(dest):
+    """The library container's viewer: 'hydra', painted by the library's own
+    osc and wobbled by its noise, over the version from the container's Version
+    page. Rebuilt from scratch every time; set as the container's Operator Viewer.
+
+    Reads hydra_osc/out / hydra_noise/out by Select TOP (never wired, so the library's
+    originals stay untouched) and resolves them by relative path, so it keeps
+    working wherever hydra.tox lands.
+    """
+    old = dest.op(COVER)
+    if old:
+        old.destroy()
+    cover = dest.create(baseCOMP, COVER)
+    place_cover(dest, cover)
+    w, h = COVER_RES
+
+    def text(name, txt, size, align_y, x, y):
+        t = cover.create(textTOP, name)
+        t.nodeX, t.nodeY = x, y
+        set_menu(t.par.outputresolution, 'custom')
+        t.par.resolutionw, t.par.resolutionh = w, h
+        t.par.fontsizex = size
+        t.par.bold = True
+        set_menu(t.par.alignx, 'center')
+        set_menu(t.par.aligny, align_y)
+        t.par.fontcolorr = t.par.fontcolorg = t.par.fontcolorb = 1
+        t.par.bgalpha = 0
+        if callable(txt):
+            txt(t.par.text)
+        else:
+            t.par.text = txt
+        return t
+
+    def select(name, fn, x, y):
+        s = cover.create(selectTOP, name)
+        s.nodeX, s.nodeY = x, y
+        target = dest.op(f'hydra_{fn}/out')        # the COMP's Out TOP, not the COMP
+        if target:
+            s.par.top = s.relativePath(target)
+        else:
+            print(f'  !! {COVER}: no hydra_{fn} in {dest.path}, left empty')
+        return s
+
+    osc = select('osc', 'osc', 0, 200)
+    noise = select('noise', 'noise', 0, -200)
+    title = text('title', 'hydra', 300, 'center', 0, 0)
+
+    wobble = cover.create(displaceTOP, 'wobble')       # title, displaced by noise
+    wobble.nodeX, wobble.nodeY = 200, 0
+    wobble.inputConnectors[0].connect(title)
+    wobble.inputConnectors[1].connect(noise)
+    wobble.par.displaceweightx = wobble.par.displaceweighty = COVER_WOBBLE
+
+    paint = cover.create(compositeTOP, 'paint')        # osc, only inside the letters
+    paint.nodeX, paint.nodeY = 400, 100
+    paint.inputConnectors[0].connect(osc)
+    paint.inputConnectors[1].connect(wobble)
+    set_menu(paint.par.operand, 'multiply')
+
+    def version_expr(par):
+        par.expr = ("'version ' + parent(2).par.Version.eval()"
+                    " + '   compiler ' + parent(2).par.Compiler.eval()"
+                    " + '   built ' + parent(2).par.Built.eval()")
+    version = text('version', version_expr, 28, 'bottom', 400, -200)
+
+    out = cover.create(overTOP, 'out')                  # version over the title
+    out.nodeX, out.nodeY = 600, 0
+    out.inputConnectors[0].connect(version)
+    out.inputConnectors[1].connect(paint)
+
+    cover.par.opviewer = cover.relativePath(out)
+    cover.viewer = True
+    _refresh_viewer(dest, dest.relativePath(out))
+    print(f'{dest.path}: viewer is {COVER}/out')
+    return cover
+
+
 LIBRARY_PATH = None        # remembered by build_all, so spawn() needs no argument
 
 
@@ -701,10 +814,11 @@ def clear(dest, components=True, annotations=True):
     return removed
 
 
-def rebuild(dest, specs=None):
-    """Wipe everything generated, then build it all again from the JSON."""
+def rebuild(dest, specs=None, **stages):
+    """Wipe everything generated, then build it all again from the JSON.
+    Takes build_all's stage flags: rebuild(dest, tox=True, palette=True)."""
     clear(dest)
-    return build_all(dest, specs)
+    return build_all(dest, specs, **stages)
 
 
 def layout_groups(dest, specs):
@@ -771,8 +885,9 @@ def members(specs):
     return out
 
 
-def export_tox(dest, specs=None, root=None, group_case=str.lower):
-    """Save each component to <root>/<group>/hydra_<name>.tox.
+def export_tox(dest, specs=None, root=None, group_case=str.lower, container=True):
+    """Save each component to <root>/<group>/hydra_<name>.tox, and with
+    container=True the library itself to <root>/<dest.name>.tox (hydra.tox).
 
     Overwrites whatever is there, so the tree always matches the last build.
     """
@@ -790,7 +905,11 @@ def export_tox(dest, specs=None, root=None, group_case=str.lower):
         comp.save(os.path.join(folder, f'hydra_{name.lower()}.tox'))
         saved += 1
 
-    print(f'saved {saved} .tox files under {root}')
+    if container:
+        os.makedirs(root, exist_ok=True)
+        dest.save(os.path.join(root, f'{dest.name}.tox'))
+    print(f'saved {saved} .tox files under {root}'
+          + (f', and {dest.name}.tox' if container else ''))
     if missing:
         print('  not built, skipped:', ', '.join(missing))
     return saved
@@ -811,15 +930,18 @@ def palette_root():
     return fallback
 
 
-def export_palette(dest, specs=None, root=None, section='Hydra'):
+def export_palette(dest, specs=None, root=None, section='Hydra', container=True):
     """Save into the user palette as My Components/Hydra/<Group>/hydra_<name>."""
     root = os.path.join(root or palette_root(), section)
-    n = export_tox(dest, specs, root=root, group_case=lambda g: g)
+    n = export_tox(dest, specs, root=root, group_case=lambda g: g, container=container)
     print('  refresh the Palette pane to pick up changes')
     return n
 
 
-def build_all(dest, specs=None, layout=True, audio=True, tox=True, palette=True):
+def build_all(dest, specs=None, layout=True, audio=True, cover=True, tox=False, palette=False):
+    """Build every component into `dest`. Writing to disk is opt-in: tox=True
+    writes components/hydra (hydra.tox included), palette=True the user palette
+    (hydra.tox included) -- both overwrite whatever is there."""
     global LIBRARY_PATH
     LIBRARY_PATH = dest.path           # so spawn() can find the library later
     specs = specs or load_specs()
@@ -828,10 +950,13 @@ def build_all(dest, specs=None, layout=True, audio=True, tox=True, palette=True)
         build(spec, dest, utils, chash)
     if audio:
         build_audio(dest)
+    stamp_version(dest, chash, compiler=True)   # the library container: what it was built from
+    if cover:
+        build_cover(dest)                       # reads the Version page just stamped
     if layout:
         layout_groups(dest, specs)
     if tox:
         export_tox(dest, specs)
     if palette:
         export_palette(dest, specs)
-    print(f'built {len(specs)} components in {dest.path}')
+    print(f'built {len(specs)} components in {dest.path}, version {VERSION}')

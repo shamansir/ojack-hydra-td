@@ -60,7 +60,7 @@ Also includes `hydra_fft` CHOP which replicates `a.fft[n]` functionality of Hydr
 
 The main thing this project provides is **the `hydra` component** — `components/hydra/hydra.tox` (also set up inside `Hydra.toe`). It is a Base COMP holding all the [Hydra functions as components](#components), plus the generator `build_hydra`.
 
-**Having it in your project is enough to create things with Hydra.** Drop `hydra.tox` into your project (say, at `/project1/hydra`) and treat it as a library:
+**Having it in your project is enough to create things with Hydra.** Drop `hydra.tox` into your project (say, at `/project1/hydra`) and treat it as a library. A build with `tox=True` writes it anew, so it matches the components next to it:
 
 * **take copies by hand** — copy any `hydra_<fn>` component from inside it and paste it into your network. Every component is self-contained (its function, shader compiler and callbacks live inside it), nothing else is needed;
 * **or, easier, spawn them from the Textport**:
@@ -75,7 +75,7 @@ The main thing this project provides is **the `hydra` component** — `component
 
 Then wire them the way you chain functions in Hydra: `osc → rotate → modulate` is `osc().rotate().modulate(...)`. Every argument is both a parameter on the component's `Hydra` page and a CHOP input you can connect anything to.
 
-**Versions.** Every function component carries a read-only **Version** page: the builder's version (currently `0.4.0`), the hash of the embedded compiler, and the build time. All the components inside one `hydra` are built together, so they share the same version — that is the version of the `hydra` component. Copies you placed keep the version they were made with; `b.version_report(op('/project1'))` lists the outdated ones and `b.upgrade(op('/project1'))` brings them up to date (see [Upgrading](#upgrading-placed-copies-and-versions)).
+**Versions.** Turn on the Viewer flag of the `hydra` component and it shows its title and the version it was built from. The `hydra` component and every function inside it carry a read-only **Version** page: the builder's version (currently `0.4.1`), the hash of the embedded compiler, and the build time. All the components inside one `hydra` are built together, so they share the version shown on the `hydra` component itself. Copies you placed keep the version they were made with; `b.version_report(op('/project1'))` lists the outdated ones and `b.upgrade(op('/project1'))` brings them up to date (see [Upgrading](#upgrading-placed-copies-and-versions)).
 
 ## Components
 
@@ -176,23 +176,30 @@ For details on building, see [`assets/scripts/hydra/BUILD.md`](assets/scripts/hy
 b = mod('/project1/hydra/build_hydra')
 
 b.build_all(op('/project1/hydra'))    # build everything (replaces same-named components)
-b.rebuild(op('/project1/hydra'))      # wipe all generated components, then build
+b.build_all(op('/project1/hydra'), tox=True, palette=True)   # ... and write .tox files and the Palette
+b.rebuild(op('/project1/hydra'))      # wipe all generated components, then build (same flags)
 b.clear(op('/project1/hydra'))        # wipe only
 b.build_audio(op('/project1/hydra'))  # just hydra_fft
 b.build(spec, op('/project1/hydra'))  # a single component, from one spec dict (see b.load_specs())
 ```
 
-`build_all` takes `layout=False`, `audio=False`, `tox=False`, `palette=False` to skip those stages, e.g. `b.build_all(op('/project1/hydra'), palette=False)`. `rebuild` always runs all of them.
+`build_all` and `rebuild` take five stage flags:
 
-BE AWARE: By default a build automatically generates and puts components to your Palette as well, under `/My Components/Hydra`. I do it not to forget to update them and not to do it by hand, but you might have concerns on this behaviour. Pass `palette=False` to `build_all` to skip it.
+* `layout=True` — arrange and annotate the groups;
+* `audio=True` — build `hydra_fft`;
+* `cover=True` — build the `hydra` component's viewer: the title and its current version (`b.build_cover(op('/project1/hydra'))` alone);
+* `tox=False` — write `components/hydra/hydra.tox` and `components/hydra/<group>/hydra_<fn>.tox`;
+* `palette=False` — write the same into your Palette, under `/My Components/Hydra` (the whole library as `hydra`, every function under its group).
+
+The two that write files are off by default, so a build never overwrites files unless you ask for it: `b.rebuild(op('/project1/hydra'), tox=True, palette=True)`. BE AWARE: they overwrite whatever is there.
 
 ALSO BE AWARE: `clear` and `rebuild` destroy **every** `hydra_*` component and **every** Annotate COMP directly in the target container, including annotations you added by hand. Keep the library container for generated content only, and patch with spawned copies elsewhere (see below).
 
 ### Exporting
 
 ```python
-b.export_tox(op('/project1/hydra'))      # write components/hydra/<group>/hydra_<fn>.tox
-b.export_palette(op('/project1/hydra'))  # write into the TD user palette
+b.export_tox(op('/project1/hydra'))      # write components/hydra/hydra.tox and components/hydra/<group>/hydra_<fn>.tox
+b.export_palette(op('/project1/hydra'))  # write the same into the TD user palette
 b.export_palette(op('/project1/hydra'), root='/some/other/Palette')
 b.layout_groups(op('/project1/hydra'), b.load_specs())   # only re-arrange and re-annotate the groups
 ```

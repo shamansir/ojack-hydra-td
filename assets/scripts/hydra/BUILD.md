@@ -44,12 +44,14 @@ From the Textport:
 b = mod('/project1/hydra/build_hydra')
 
 b.build_all(op('/project1/hydra'))    # build everything (replaces same-named)
-b.rebuild(op('/project1/hydra'))      # wipe all generated ops, then build
+b.build_all(op('/project1/hydra'), tox=True, palette=True)   # ... and write .tox files + palette
+b.rebuild(op('/project1/hydra'))      # wipe all generated ops, then build (same flags)
 b.clear(op('/project1/hydra'))        # wipe only
 b.build_audio(op('/project1/hydra'))  # just hydra_fft
+b.build_cover(op('/project1/hydra'))  # just the library's viewer (title + version)
 b.upgrade(op('/project1'))               # bring placed copies up to the current code
-b.export_tox(op('/project1/hydra'))      # write the .tox tree
-b.export_palette(op('/project1/hydra'))  # write into the TD user palette
+b.export_tox(op('/project1/hydra'))      # write the .tox tree, hydra.tox included
+b.export_palette(op('/project1/hydra'))  # write into the TD user palette, hydra.tox included
 b.layout_groups(op('/project1/hydra'), b.load_specs())   # re-arrange only
 b.build(spec, op('/project1/hydra'))  # a single component, from one spec dict
 b.spawn(['osc', 'osc', 'rotate', 'scale'])               # copies to patch with
@@ -59,13 +61,47 @@ b.version_report(op('/project1'))        # components not built from the current
 b.dump_shaders(op('/project1'))          # write every generated shader to build/hydra-shaders
 ```
 
-`build_all` and `rebuild` take `layout=False`, `audio=False`, `tox=False`,
-`palette=False` to skip those stages.
+`build_all` and `rebuild` take five stage flags:
+
+| flag | default | stage |
+|---|---|---|
+| `layout` | on | arrange and annotate the groups |
+| `audio` | on | build `hydra_fft` |
+| `cover` | on | build `cover`, the library container's viewer (see below) |
+| `tox` | **off** | write the `.tox` tree under `components/hydra` (`export_tox`) |
+| `palette` | **off** | write into the user palette (`export_palette`) |
+
+The two that write files are off by default, so a build never overwrites files
+unless asked: `b.rebuild(op('/project1/hydra'), tox=True, palette=True)`.
 
 > `clear` and `rebuild` destroy **every** `hydra_*` COMPONENT and **every**
 > Annotate COMP in the target container, including annotations you added by
 > hand. Keep this container for generated content only. Helper DATs are safe —
 > only COMPs are destroyed, so `hydra_seq` survives despite its name.
+
+## The library's viewer
+
+`build_cover` puts a `cover` Base COMP inside the library and makes it the
+container's Operator Viewer (Viewer flag on): **hydra** in large letters, painted
+by the library's own `hydra_osc` and wobbled by its `hydra_noise`, with
+`version … compiler … built …` read live from the container's Version page.
+
+```
+cover/
+  osc, noise   Select TOPs     hydra_osc/out, hydra_noise/out -- read, never wired
+  title        Text TOP        'hydra'
+  wobble       Displace TOP    title displaced by noise
+  paint        Composite TOP   osc multiplied by the letters
+  version      Text TOP        expression on parent(2).par.Version / Compiler / Built
+  out          Over TOP        version over paint -- the viewer
+```
+
+It is rebuilt from scratch on every call, so edit `build_cover` rather than the
+network. It is not tagged and not named `hydra_*`, so `clear` leaves it alone and
+it travels inside `hydra.tox`. Change the text, font size or which functions paint
+it there; `COVER_RES` sets its resolution, `COVER_WOBBLE` the Displace weight
+(0.02). It sits directly above the `build_hydra` DAT at the same width
+(`place_cover`, `COVER_GAP` between them).
 
 ## Upgrading placed copies
 
@@ -97,10 +133,13 @@ then `b.rebuild(...)` and `b.upgrade(...)` in TD.
 
 ## Exported .tox files
 
-Every build also writes each component to disk, one folder per group:
+`export_tox` — or a build with `tox=True` — writes each component to disk, one
+folder per group, and the whole library container as `hydra.tox` (named after
+the container):
 
 ```
 components/hydra/
+  hydra.tox  the library: every component below plus build_hydra
   source/    hydra_osc.tox, hydra_noise.tox, …
   geometry/  hydra_rotate.tox, …
   color/     …
@@ -110,7 +149,9 @@ components/hydra/
 ```
 
 Existing files are overwritten, so the tree always matches the last build. Drag
-one into any project to use a single function without the builder.
+one into any project to use a single function without the builder, or
+`hydra.tox` for all of them. Pass `container=False` to `export_tox` or
+`export_palette` to skip `hydra.tox`.
 
 A `.tox` is self-contained: the function spec, the compiler and every callback
 live inside it, and nothing is file-synced. Drop it into any project.
@@ -120,8 +161,10 @@ it never deletes. Clear the tree by hand when that happens.
 
 ## The TouchDesigner palette
 
-The same export also writes into the user palette, so the components show up
-under **My Components / Hydra / <Group> / hydra_<func>**:
+`export_palette` — or a build with `palette=True` — writes the same tree into the
+user palette, so the components show up under
+**My Components / Hydra / <Group> / hydra_<func>**, and the whole library as
+**My Components / Hydra / hydra**:
 
 ```python
 b.export_palette(op('/project1/hydra'))
@@ -419,7 +462,10 @@ Every component carries a read-only **Version** page:
 | `compiler` | first 8 hex digits of the SHA-1 of `hydra_compile.py` — the embedded `compile` DAT; `-` on components without one |
 | `built` | when this copy was built or last upgraded |
 
-`build` and `upgrade` stamp it; spawned copies inherit the library's. The compiler
+`build` and `upgrade` stamp it; spawned copies inherit the library's. `build_all`
+(and so `rebuild`) also stamps the library container itself, so `hydra.tox` says
+which code its components were built from. `version_report` and `upgrade` look at
+tagged components only, so they ignore the container. The compiler
 hash changes by itself, so it catches a copy that missed an `upgrade` even when
 `VERSION` was not bumped.
 

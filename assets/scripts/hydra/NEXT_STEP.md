@@ -1,5 +1,20 @@
 # Next step
 
+## Done in 0.4.1 (2026-11-13)
+
+- `build_all` stamps a Version page on the library container too (`Compiler` is
+  the hash its components embed).
+- `export_tox` and `export_palette` also save the library container as
+  `hydra.tox` (`container=False` skips it).
+- `build_all`'s `tox` and `palette` default to off: a build writes no files unless
+  asked. `rebuild` passes the stage flags on to `build_all`.
+- `build_cover`: the library container's viewer -- 'hydra' painted by the
+  library's osc, wobbled by its noise, with the version underneath. New `cover`
+  stage flag on `build_all`, on by default. Text TOP / Displace / Composite / Over
+  parameter names taken from the offline help; menus set by `set_menu`.
+
+Not yet run in TouchDesigner.
+
 ## Done in 0.4.0 (2026-10-06)
 
 Runtime Python 1629 → 1362 lines (`build_hydra.py` 1072 → 837,
