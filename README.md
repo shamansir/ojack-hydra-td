@@ -58,18 +58,53 @@ Also includes `hydra_fft` CHOP which replicates `a.fft[n]` functionality of Hydr
 
 ## Building
 
-For details on building, see `assets/scripts/hydra/Build.md`.
+For details on building, see [`assets/scripts/hydra/BUILD.md`](assets/scripts/hydra/BUILD.md).
 
 `Hydra.toe` project includes all the function-components and the generator component `build_hydra` inside the `hydra` Base Component. Which is itself stored in `components/hydra`.
 
-Components are rewritten all the time when `build_hydra.py` is changed and those lines performed in Textport:
+`build_hydra` is a Text DAT synced to `assets/scripts/hydra/build_hydra.py`. It is *imported*, not run, so all the commands go to the Textport:
 
 ```python
 b = mod('/project1/hydra/build_hydra')
-b.rebuild(op('/project1/hydra'))
+
+b.build_all(op('/project1/hydra'))    # build everything (replaces same-named components)
+b.rebuild(op('/project1/hydra'))      # wipe all generated components, then build
+b.clear(op('/project1/hydra'))        # wipe only
+b.build_audio(op('/project1/hydra'))  # just hydra_fft
+b.build(spec, op('/project1/hydra'))  # a single component, from one spec dict (see b.load_specs())
 ```
 
-BE AWARE: In this case it automatically generates and puts components to your Palette as well, under `/My Components/Hydra`. I do it not to forget to update them and not to do it by hand, but you might have concerns on this behaviour.
+`build_all` takes `layout=False`, `audio=False`, `tox=False`, `palette=False` to skip those stages, e.g. `b.build_all(op('/project1/hydra'), palette=False)`. `rebuild` always runs all of them.
+
+BE AWARE: By default a build automatically generates and puts components to your Palette as well, under `/My Components/Hydra`. I do it not to forget to update them and not to do it by hand, but you might have concerns on this behaviour. Pass `palette=False` to `build_all` to skip it.
+
+ALSO BE AWARE: `clear` and `rebuild` destroy **every** `hydra_*` component and **every** Annotate COMP directly in the target container, including annotations you added by hand. Keep the library container for generated content only, and patch with spawned copies elsewhere (see below).
+
+### Exporting
+
+```python
+b.export_tox(op('/project1/hydra'))      # write components/hydra/<group>/hydra_<fn>.tox
+b.export_palette(op('/project1/hydra'))  # write into the TD user palette
+b.export_palette(op('/project1/hydra'), root='/some/other/Palette')
+b.layout_groups(op('/project1/hydra'), b.load_specs())   # only re-arrange and re-annotate the groups
+```
+
+Every `.tox` is self-contained: the function spec, the compiler and every callback live inside it, nothing is file-synced. Export only writes and never deletes, so a renamed function leaves its old `.tox` behind. Refresh the Palette pane after an export, it does not watch the folder.
+
+### Upgrading placed copies and versions
+
+A placed copy carries its own internals, so a change in the builder or the compiler does not reach it by itself. Every component has a read-only **Version** page: `version` (the builder's `VERSION`), `compiler` (hash of the embedded `hydra_compile.py`) and `built` (time of the build or last upgrade).
+
+```python
+b.upgrade(op('/project1'))          # bring every placed copy under it, recursively, up to the current code
+b.version_report(op('/project1'))   # list components not built from the current code; empty = all current
+```
+
+`upgrade` keeps the wiring, parameter values and node positions, creates whatever the copy lacks and rewrites only what is generated (spec, compiler, callbacks, shader). It identifies components by the spec stored on them (or their `hydra:fn:` tag), never by name, so renamed copies are recognised too.
+
+After a `hydra` update upstream: run `./assets/scripts/hydra/generate-hydra-functions.sh` to refresh the JSON, then `b.rebuild(...)` and `b.upgrade(...)` in TD.
+
+When reporting a problem, the version and compiler hash of the component involved say exactly which code it runs.
 
 ![Hydra Scale component parameters](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/hydra-scale-params-00.png?raw=true)
 
@@ -87,12 +122,62 @@ BE AWARE: In this case it automatically generates and puts components to your Pa
 
 ## Features
 
-`build_hydra` script has many helpers, for example:
+`build_hydra` script has many helpers. All the ones taking a container search it recursively, nested containers included.
 
-* `b.spawn(['osc', 'osc', 'rotate', 'scale'])` would spawn clones of those components from Library into your project root;
+### Spawning
+
+The generated components are a library — patch with copies of them, not with the originals:
+
+* `b.spawn(['osc', 'osc', 'rotate', 'scale'])` would spawn copies of those components from the library into the library's parent (your project root, by default);
+  * `b.spawn(['osc*3', 'rotate'])` or `b.spawn('osc*3 rotate scale')` — counts and a single string work too;
   * pass `, dest=op('/project1/sketch')` to spawn them to some other destination;
-  * pass `, postfix='xx'` to spawn them with postfix after the name;
-* `b.set_resolution(op('/project1/hydra'), 1920, 1080)` sets given resolution to all Hydra source components at given path (source components such as `osc` or `shape`, all have `Output` tab individually to allow setting it on your own)
+  * pass `, postfix='_a'` to spawn them with postfix after the name (`hydra_osc_a`); repeats get a numeric suffix (`hydra_osc`, `hydra_osc1`);
+  * pass `, lib=op('/some/other/hydra')` to spawn from a different library;
+* `spawn` returns the created components, so you can wire them right away:
+
+```python
+a, n, m = b.spawn(['osc', 'noise', 'modulate'])
+m.inputConnectors[0].connect(a)   # source
+m.inputConnectors[1].connect(n)   # modulator
+```
+
+Copies land outside the library on purpose: they inherit the `hydra` tag, so `clear()` / `rebuild()` of the library would destroy them too.
+
+### Modes: Compiled and Image
+
+Every component has a **Mode** on its **Pipeline** page:
+
+* **Compiled** (default) — hydra's own model: the component walks the wiring upstream and fuses every Compiled hydra component into one shader, the way hydra does, so `osc → rotate → scale` evaluates `osc(rotate(scale(st)))` in a single pass: nothing is resampled, nothing seams;
+* **Image** — renders this component on its own and makes it a texture for everything downstream. Use it for a slow source shared by several branches or one that doesn't change over time; keep it out of the way of `rotate` / `scale` / `kaleid`, since downstream of it they sample a finite texture again.
+
+```python
+b.set_mode(op('/project1/sketch'), 'image')     # or 'compiled', on every component under it
+```
+
+A chain recompiles by itself on rewiring, renaming, Viewer flag or Mode change; the **Compile** pulse forces it. Parameter and CHOP changes need no recompile. Compiled components that nothing looks at (no Viewer, no output) are not compiled at all.
+
+### Time
+
+The functions that use `time` (`osc`, `noise`, `voronoi`, `gradient`, `rotate`, `scroll*`, `modulateScroll*`) have a **Time Sync** page with a **Time** parameter holding `absTime.seconds`. Replace it with any expression (Timer CHOP, a slowed clock, ...) and pulse **Propagate Time Expr** to copy it to every hydra component downstream.
+
+### Resolution and Output
+
+* `b.set_resolution(op('/project1/hydra'), 1280, 1280)` sets given resolution to all Hydra source components at given path (source components such as `osc` or `shape`, all have `Output` tab individually to allow setting it on your own). Everything else follows the resolution of its chain's source. Default is 1280×720; a non-commercial licence caps output at 1280×1280, and `set_resolution` warns when you ask for more;
+* `b.set_output(op('/project1/hydra'), smoothness='nearest')` / `b.set_output(op('/project1/hydra'), pixel_format='8-bit')` — set input smoothness and pixel format on every component (matched by substring against TD's menu). `nearest` + 8-bit is what hydra itself uses and keeps feedback loops crisp; 16-bit float keeps negative values when `noise()` feeds `modulate()`.
+
+### Debugging
+
+* `b.version_report(op('/project1'))` — components not built from the current code;
+* `b.cook_report(op('/project1/sketch'))` — last-frame GPU and CPU cook time per component;
+* `b.dump_shaders(op('/project1'))` — write every generated shader to `build/hydra-shaders/<path>.frag` (git-ignored, export only), pass `root='/some/folder'` to change the place.
+
+### Tags
+
+Every generated component is tagged `hydra`, `hydra:fn:<func>` and `hydra:class:<class>`, so you can find them yourself:
+
+```python
+op('/project1/hydra').findChildren(tags=['hydra:class:coord'])
+```
 
 `hydra_seq` script can be used to emulate Hydra array arguments which allow to step over a set of values with constant speed or with easing. Same and even much more powerful can be achieved using CHOPs of course, so you have a freedom to choose any way you prefer.
 
