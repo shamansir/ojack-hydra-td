@@ -56,6 +56,114 @@ Also includes `hydra_fft` CHOP which replicates `a.fft[n]` functionality of Hydr
 
 ![In Action](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/audio-in-action-00.png?raw=true)
 
+## What You Get
+
+The main thing this project provides is **the `hydra` component** — `components/hydra/hydra.tox` (also set up inside `Hydra.toe`). It is a Base COMP holding all the [Hydra functions as components](#components), plus the generator `build_hydra`.
+
+**Having it in your project is enough to create things with Hydra.** Drop `hydra.tox` into your project (say, at `/project1/hydra`) and treat it as a library:
+
+* **take copies by hand** — copy any `hydra_<fn>` component from inside it and paste it into your network. Every component is self-contained (its function, shader compiler and callbacks live inside it), nothing else is needed;
+* **or, easier, spawn them from the Textport**:
+
+  ```python
+  b = mod('/project1/hydra/build_hydra')
+  b.spawn('osc noise*2 rotate modulate')        # copies land next to the library, in /project1
+  b.spawn(['osc'], dest=op('/project1/sketch')) # or anywhere else
+  ```
+
+  `build_hydra` reads its sibling files (`hydra_compile.py`, `hydra-functions.json`, ...) when imported, so for the Textport way keep the `assets/scripts/hydra` folder next to your `.toe`, at the same relative path.
+
+Then wire them the way you chain functions in Hydra: `osc → rotate → modulate` is `osc().rotate().modulate(...)`. Every argument is both a parameter on the component's `Hydra` page and a CHOP input you can connect anything to.
+
+**Versions.** Every function component carries a read-only **Version** page: the builder's version (currently `0.4.0`), the hash of the embedded compiler, and the build time. All the components inside one `hydra` are built together, so they share the same version — that is the version of the `hydra` component. Copies you placed keep the version they were made with; `b.version_report(op('/project1'))` lists the outdated ones and `b.upgrade(op('/project1'))` brings them up to date (see [Upgrading](#upgrading-placed-copies-and-versions)).
+
+## Components
+
+Grouped as inside the `hydra` component. Arguments are given with their defaults; every numeric one is both a parameter and a CHOP input. Image inputs (TOPs) are listed separately.
+
+### Source
+
+Generators: no image input (except `src` and `prev`, which read theirs on `source`), each has its own **Resolution** on the `Output` page.
+
+* `hydra_osc` — `osc(frequency=60, sync=0.1, offset=0)` — sine-wave stripes, `offset` shifts the colour channels apart;
+* `hydra_noise` — `noise(scale=10, offset=0.1)` — animated Perlin-like noise;
+* `hydra_voronoi` — `voronoi(scale=5, speed=0.3, blending=0.3)` — animated Voronoi cells;
+* `hydra_shape` — `shape(sides=3, radius=0.3, smoothing=0.01)` — regular polygon, many `sides` give a circle;
+* `hydra_gradient` — `gradient(speed=0)` — XY colour gradient, rotating hue with `speed`;
+* `hydra_solid` — `solid(r=0, g=0, b=0, a=1)` — a single colour;
+* `hydra_src` — `src(tex)` — any TOP as a source (camera, movie, another chain, Feedback TOP...);
+* `hydra_prev` — `prev()` — Hydra's previous-frame buffer; here it reads whatever you wire into it, e.g. a Feedback TOP.
+
+### Geometry
+
+Transform the coordinates of everything upstream. One image input: `source`.
+
+* `hydra_rotate` — `rotate(angle=10, speed=0)` — rotate by `angle` (degrees), continuously with `speed`;
+* `hydra_scale` — `scale(amount=1.5, xMult=1, yMult=1, offsetX=0.5, offsetY=0.5)` — zoom, per axis, around the offset point;
+* `hydra_pixelate` — `pixelate(pixelX=20, pixelY=20)` — blocky pixels, count per axis;
+* `hydra_repeat` — `repeat(repeatX=3, repeatY=3, offsetX=0, offsetY=0)` — tile in both axes, shifting every other row/column;
+* `hydra_repeatx` — `repeatX(reps=3, offset=0)` — tile horizontally;
+* `hydra_repeaty` — `repeatY(reps=3, offset=0)` — tile vertically;
+* `hydra_kaleid` — `kaleid(nSides=4)` — kaleidoscope with `nSides` mirrors;
+* `hydra_scroll` — `scroll(scrollX=0.5, scrollY=0.5, speedX=0, speedY=0)` — shift in both axes, continuously with speed;
+* `hydra_scrollx` — `scrollX(scrollX=0.5, speed=0)` — shift horizontally;
+* `hydra_scrolly` — `scrollY(scrollY=0.5, speed=0)` — shift vertically.
+
+### Color
+
+Change the colour of the input. One image input: `source`.
+
+* `hydra_posterize` — `posterize(bins=3, gamma=0.6)` — reduce to `bins` levels per channel;
+* `hydra_shift` — `shift(r=0.5, g=0, b=0, a=0)` — shift each channel, wrapping around;
+* `hydra_invert` — `invert(amount=1)` — invert colours;
+* `hydra_contrast` — `contrast(amount=1.6)` — contrast around mid-grey;
+* `hydra_brightness` — `brightness(amount=0.4)` — add brightness;
+* `hydra_luma` — `luma(threshold=0.5, tolerance=0.1)` — keep only what is brighter than `threshold` (luma key);
+* `hydra_thresh` — `thresh(threshold=0.5, tolerance=0.04)` — black and white by brightness threshold;
+* `hydra_color` — `color(r=1, g=1, b=1, a=1)` — multiply channels by a colour;
+* `hydra_saturate` — `saturate(amount=2)` — saturation, 0 is greyscale;
+* `hydra_hue` — `hue(hue=0.4)` — rotate hue;
+* `hydra_colorama` — `colorama(amount=0.005)` — shift hue, saturation and value at once, psychedelic;
+* `hydra_sum` — `sum(scale=[1, 1, 1, 1])` — weighted sum of the channels (a `vec4` parameter, no CHOP input);
+* `hydra_r` — `r(scale=1, offset=0)` — red channel only, as greyscale;
+* `hydra_g` — `g(scale=1, offset=0)` — green channel only;
+* `hydra_b` — `b(scale=1, offset=0)` — blue channel only;
+* `hydra_a` — `a(scale=1, offset=0)` — alpha channel only.
+
+### Blend
+
+Combine two images. Image inputs: `source` and `with` (the `texture` argument).
+
+* `hydra_add` — `add(texture, amount=1)` — add colours;
+* `hydra_sub` — `sub(texture, amount=1)` — subtract colours;
+* `hydra_mult` — `mult(texture, amount=1)` — multiply colours;
+* `hydra_blend` — `blend(texture, amount=0.5)` — crossfade between the two;
+* `hydra_diff` — `diff(texture, amount=1)` — absolute difference;
+* `hydra_layer` — `layer(texture, amount=1)` — put the texture on top, by its alpha;
+* `hydra_mask` — `mask(texture, amount=1)` — use the texture's brightness as alpha.
+
+`amount` on `diff`, `layer` and `mask` is our addition (Hydra has none there); at its default of 1 they behave exactly like Hydra.
+
+### Modulate
+
+Distort the coordinates of `source` using the colours of the second image, the `modulator`.
+
+* `hydra_modulate` — `modulate(texture, amount=0.1)` — displace by the modulator's red/green;
+* `hydra_modulatescale` — `modulateScale(texture, multiple=1, offset=1)` — zoom by the modulator;
+* `hydra_modulaterotate` — `modulateRotate(texture, multiple=1, offset=0)` — rotate by the modulator;
+* `hydra_modulatepixelate` — `modulatePixelate(texture, multiple=10, offset=3)` — pixelate by the modulator;
+* `hydra_modulatehue` — `modulateHue(texture, amount=1)` — displace by the hue difference with the modulator;
+* `hydra_modulatekaleid` — `modulateKaleid(texture, nSides=4)` — kaleidoscope driven by the modulator;
+* `hydra_modulaterepeat` — `modulateRepeat(texture, repeatX=3, repeatY=3, offsetX=0.5, offsetY=0.5)` — tile, offsets driven by the modulator;
+* `hydra_modulaterepeatx` — `modulateRepeatX(texture, reps=3, offset=0.5)` — tile horizontally, driven by the modulator;
+* `hydra_modulaterepeaty` — `modulateRepeatY(texture, reps=3, offset=0.5)` — tile vertically, driven by the modulator;
+* `hydra_modulatescrollx` — `modulateScrollX(texture, scrollX=0.5, speed=0)` — horizontal shift driven by the modulator;
+* `hydra_modulatescrolly` — `modulateScrollY(texture, scrollY=0.5, speed=0)` — vertical shift driven by the modulator.
+
+### Audio
+
+* `hydra_fft` — `a.fft[n]` — audio CHOP in, `fft_0 … fft_<Bins-1>` and `vol` channels out; parameters `Bins=4`, `Cutoff=2`, `Scale=10`, `Smooth=0.4`. Wire any channel straight into any argument's CHOP input.
+
 ## Building
 
 For details on building, see [`assets/scripts/hydra/BUILD.md`](assets/scripts/hydra/BUILD.md).
