@@ -10,6 +10,8 @@ This project is built 96% with the help of Claude Code in two relaxed days. [Hea
 
 ## Screenshots
 
+![Hydra Project](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/hydra_project.png?raw=true)
+
 ![All components grouped including the generator](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/all-grouped-02.png?raw=true)
 
 ![Source Group with previews](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/group-source-01.png?raw=true)
@@ -29,6 +31,8 @@ This project is built 96% with the help of Claude Code in two relaxed days. [Hea
 ### Examples
 
 ![All Examples](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/all-examples-00.png?raw=true)
+
+![All Examples Extended](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/hydra_examples.png?raw=true)
 
 ![`khoparzi_1`](https://github.com/shamansir/ojack-hydra-td/blob/main/screens/example-khoparzi_1-01.png?raw=true) [`khoparzi_1` at Hydra](https://hydra.ojack.xyz/?sketch_id=khoparzi_1)
 
